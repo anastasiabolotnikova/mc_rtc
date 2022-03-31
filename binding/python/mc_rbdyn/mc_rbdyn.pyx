@@ -586,11 +586,16 @@ cdef class Robot(object):
     if isinstance(name, unicode):
       name = name.encode(u'ascii')
     return self.impl.jointIndexByName(name)
+  def jointIndexInMBC(self, jointIndex):
+    self.__is_valid()
+    return self.impl.jointIndexInMBC(jointIndex)
   def bodyIndexByName(self, name):
     self.__is_valid()
     if isinstance(name, unicode):
       name = name.encode(u'ascii')
     return self.impl.bodyIndexByName(name)
+
+
 
   def forceSensor(self, name):
     self.__is_valid()
@@ -882,6 +887,10 @@ cdef class Robot(object):
   def module(self):
       self.__is_valid()
       return RobotModuleFromCRef(self.impl.module())
+
+  def encoderValues(self):
+      self.__is_valid()
+      return self.impl.encoderValues()
 
 
 cdef Robot RobotFromC(const c_mc_rbdyn.Robot & robot):
