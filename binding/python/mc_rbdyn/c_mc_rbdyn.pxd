@@ -154,6 +154,7 @@ cdef extern from "<mc_rbdyn/Robot.h>" namespace "mc_rbdyn":
     cppbool hasJoint(string)
     cppbool hasBody(string)
     unsigned int jointIndexByName(string)
+    int jointIndexInMBC(int)
     unsigned int bodyIndexByName(string)
 
     bool hasForceSensor(string)
@@ -234,6 +235,8 @@ cdef extern from "<mc_rbdyn/Robot.h>" namespace "mc_rbdyn":
     void posW(PTransformd pt)
 
     RobotModule & module()
+
+    vector[double] & encoderValues()
 
   shared_ptr[Robots] loadRobot(const RobotModule&, PTransformd *, const string&)
   shared_ptr[Robots] loadRobots(const vector[RobotModulePtr]&)

@@ -71,7 +71,6 @@ cdef extern from *:
   ctypedef int seven "7"
   ctypedef array[double, seven] array7d
 
-
 cdef extern from "<mc_control/mc_global_controller.h>" namespace "mc_control":
   cdef cppclass MCGlobalController:
     MCGlobalController()
@@ -87,6 +86,7 @@ cdef extern from "<mc_control/mc_global_controller.h>" namespace "mc_control":
     void setSensorAngularVelocity(Vector3d)
     void setSensorLinearAcceleration(Vector3d)
     void setEncoderValues(vector[double])
+    void setEncoderValues(string, vector[double])
     void setEncoderVelocities(vector[double])
     void setFlexibilityValues(vector[double])
     void setJointTorques(vector[double])

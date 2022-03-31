@@ -220,6 +220,8 @@ cdef class MCGlobalController(object):
     self.impl.setSensorLinearAcceleration(a.impl)
   def setEncoderValues(self, q):
     self.impl.setEncoderValues(q)
+  def setRobotEncoderValues(self, rn, q):
+    self.impl.setEncoderValues(rn, q)
   def setEncoderVelocities(self, alpha):
     self.impl.setEncoderVelocities(alpha)
   def setFlexibilityValues(self, flex):
