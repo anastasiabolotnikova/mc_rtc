@@ -25,15 +25,17 @@ struct MC_RBDYN_DLLAPI Collision
             double s,
             double d,
             const std::vector<std::string> & r1Joints = {},
-            const std::vector<std::string> & r2Joints = {})
-  : body1(b1), body2(b2), iDist(i), sDist(s), damping(d), r1Joints(r1Joints), r2Joints(r2Joints)
+            const std::vector<std::string> & r2Joints = {},
+            bool reverse = false)
+  : body1(b1), body2(b2), iDist(i), sDist(s), damping(d), reverse(reverse), r1Joints(r1Joints), r2Joints(r2Joints)
   {
   }
   std::string body1; /** First body in the constraint */
   std::string body2; /** Second body in the constraint */
   double iDist; /** Interaction distance */
   double sDist; /** Security distance */
-  double damping; /** Damping (0 is automatic */
+  double damping; /** Damping (0 is automatic) */
+  bool reverse; /** If true, maximum distance constraint is defined (not a collision constraint) */
   std::vector<std::string> r1Joints; /** Selected joints in the first robot (empty = all joints) */
   std::vector<std::string> r2Joints; /** Selected joints in the second robot, ignored if r1 == r2 */
   inline bool isNone()

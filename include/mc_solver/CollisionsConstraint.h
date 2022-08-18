@@ -46,7 +46,7 @@ public:
    * \param b2Name Name of the second convex
    * \return True if the collision was found and removed, false otherwise
    */
-  bool removeCollision(QPSolver & solver, const std::string & b1Name, const std::string & b2Name);
+  bool removeCollision(QPSolver & solver, const std::string & b1Name, const std::string & b2Name, const bool & reverse);
 
   /** Remove a set of collisions
    *
@@ -108,9 +108,9 @@ private:
   /* Internal sauce to manage collisions */
   int collId;
   std::map<std::string, std::pair<int, mc_rbdyn::Collision>> collIdDict;
-  std::string __keyByNames(const std::string & name1, const std::string & name2);
+  std::string __keyByNames(const std::string & name1, const std::string & name2, const bool & reverse);
   int __createCollId(const mc_rbdyn::Collision & col);
-  std::pair<int, mc_rbdyn::Collision> __popCollId(const std::string & name1, const std::string & name2);
+  std::pair<int, mc_rbdyn::Collision> __popCollId(const std::string & name1, const std::string & name2, const bool & reverse);
   /** Actually adds the collision to the constraint, handles id creation and wildcard support */
   void __addCollision(const mc_solver::QPSolver & solver, const mc_rbdyn::Collision & col);
 

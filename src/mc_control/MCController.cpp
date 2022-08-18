@@ -722,7 +722,7 @@ void MCController::addCollisions(const std::string & r1,
     swapped.reserve(collisions.size());
     for(const auto & c : collisions)
     {
-      swapped.push_back({c.body2, c.body1, c.iDist, c.sDist, c.damping});
+      swapped.push_back({c.body2, c.body1, c.iDist, c.sDist, c.damping, c.r2Joints, c.r1Joints, c.reverse});
     }
     addCollisions(r2, r1, swapped);
     return;

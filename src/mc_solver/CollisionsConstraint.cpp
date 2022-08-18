@@ -23,16 +23,16 @@ CollisionsConstraint::CollisionsConstraint(const mc_rbdyn::Robots & robots,
 {
 }
 
-bool CollisionsConstraint::removeCollision(QPSolver & solver, const std::string & b1Name, const std::string & b2Name)
+bool CollisionsConstraint::removeCollision(QPSolver & solver, const std::string & b1Name, const std::string & b2Name, const bool & reverse)
 {
-  auto p = __popCollId(b1Name, b2Name);
+  auto p = __popCollId(b1Name, b2Name, reverse);
   if(!p.second.isNone())
   {
     if(monitored_.count(p.first))
     {
       toggleCollisionMonitor(p.first);
       category_.push_back("Monitors");
-      std::string name = "Monitor " + p.second.body1 + "/" + p.second.body2;
+      std::string name = "Monitor " + p.second.body1 + "/" + p.second.body2 + "_" + std::to_string(p.second.reverse);
       gui_->removeElement(category_, name);
       category_.pop_back();
     }
@@ -52,7 +52,7 @@ void CollisionsConstraint::removeCollisions(QPSolver & solver, const std::vector
 {
   for(const auto & c : cols)
   {
-    removeCollision(solver, c.body1, c.body2);
+    removeCollision(solver, c.body1, c.body2, c.reverse);
   }
 }
 
@@ -67,14 +67,14 @@ bool CollisionsConstraint::removeCollisionByBody(QPSolver & solver,
   {
     if(r1.convex(col.body1).first == b1Name && r2.convex(col.body2).first == b2Name)
     {
-      auto out = __popCollId(col.body1, col.body2);
+      auto out = __popCollId(col.body1, col.body2, col.reverse);
       toRm.push_back(out.second);
       collConstr->rmCollision(out.first);
       if(monitored_.count(out.first))
       {
         toggleCollisionMonitor(out.first);
         category_.push_back("Monitors");
-        std::string name = "Monitor " + out.second.body1 + "/" + out.second.body2;
+        std::string name = "Monitor " + out.second.body1 + "/" + out.second.body2 + "_" + std::to_string(out.second.reverse);
         gui_->removeElement(category_, name);
         category_.pop_back();
       }
@@ -176,13 +176,13 @@ void CollisionsConstraint::__addCollision(const mc_solver::QPSolver & solver, co
   {
     collConstr->addCollision(robots.mbs(), collId, static_cast<int>(r2Index), body2.first, body2.second.get(), X_b2_c,
                              static_cast<int>(r1Index), body1.first, body1.second.get(), X_b1_c, col.iDist, col.sDist,
-                             col.damping, defaultDampingOffset, r2Selector, r1Selector);
+                             col.damping, defaultDampingOffset, r2Selector, r1Selector, col.reverse);
   }
   else
   {
     collConstr->addCollision(robots.mbs(), collId, static_cast<int>(r1Index), body1.first, body1.second.get(), X_b1_c,
                              static_cast<int>(r2Index), body2.first, body2.second.get(), X_b2_c, col.iDist, col.sDist,
-                             col.damping, defaultDampingOffset, r1Selector, r2Selector);
+                             col.damping, defaultDampingOffset, r1Selector, r2Selector, col.reverse);
   }
   if(solver.gui())
   {
@@ -200,7 +200,7 @@ void CollisionsConstraint::addMonitorButton(int collId, const mc_rbdyn::Collisio
   if(gui_ && inSolver_)
   {
     auto & gui = *gui_;
-    std::string name = col.body1 + "/" + col.body2;
+    std::string name = col.body1 + "/" + col.body2 + "_" + std::to_string(col.reverse);
     category_.push_back("Monitors");
     gui.addElement(category_, mc_rtc::gui::Checkbox(
                                   "Monitor " + name, [collId, this]() { return monitored_.count(collId) != 0; },
@@ -223,7 +223,7 @@ void CollisionsConstraint::toggleCollisionMonitor(int collId)
   };
   const auto & col = findCollisionById();
   auto & gui = *gui_;
-  std::string label = col.body1 + "::" + col.body2;
+  std::string label = col.body1 + "::" + col.body2 + "_" + std::to_string(col.reverse);
   if(monitored_.count(collId))
   {
     // Remove the monitor
@@ -302,14 +302,14 @@ void CollisionsConstraint::reset()
   }
 }
 
-std::string CollisionsConstraint::__keyByNames(const std::string & name1, const std::string & name2)
+std::string CollisionsConstraint::__keyByNames(const std::string & name1, const std::string & name2, const bool & reverse)
 {
-  return name1 + name2;
+  return name1 + name2 + std::to_string(reverse);
 }
 
 int CollisionsConstraint::__createCollId(const mc_rbdyn::Collision & col)
 {
-  std::string key = __keyByNames(col.body1, col.body2);
+  std::string key = __keyByNames(col.body1, col.body2, col.reverse);
   auto it = collIdDict.find(key);
   if(it != collIdDict.end())
   {
@@ -322,9 +322,10 @@ int CollisionsConstraint::__createCollId(const mc_rbdyn::Collision & col)
 }
 
 std::pair<int, mc_rbdyn::Collision> CollisionsConstraint::__popCollId(const std::string & name1,
-                                                                      const std::string & name2)
+                                                                      const std::string & name2,
+                                                                      const bool & reverse)
 {
-  std::string key = __keyByNames(name1, name2);
+  std::string key = __keyByNames(name1, name2, reverse);
   if(collIdDict.count(key))
   {
     std::pair<int, mc_rbdyn::Collision> p = collIdDict[key];
@@ -344,7 +345,7 @@ bool RobotEnvCollisionsConstraint::removeEnvCollision(QPSolver & solver,
                                                       const std::string & rBodyName,
                                                       const std::string & eBodyName)
 {
-  return envCollConstrMng.removeCollision(solver, rBodyName, eBodyName);
+  return envCollConstrMng.removeCollision(solver, rBodyName, eBodyName, false);
 }
 
 bool RobotEnvCollisionsConstraint::removeEnvCollisionByBody(QPSolver & solver,
@@ -358,7 +359,7 @@ bool RobotEnvCollisionsConstraint::removeSelfCollision(QPSolver & solver,
                                                        const std::string & body1Name,
                                                        const std::string & body2Name)
 {
-  return selfCollConstrMng.removeCollision(solver, body1Name, body2Name);
+  return selfCollConstrMng.removeCollision(solver, body1Name, body2Name, false);
 }
 
 void RobotEnvCollisionsConstraint::addEnvCollision(QPSolver & solver, const mc_rbdyn::Collision & col)
