@@ -65,7 +65,7 @@ cdef extern from "<mc_solver/CollisionsConstraint.h>" namespace "mc_solver":
   cdef cppclass CollisionsConstraint(ConstraintSet):
     CollisionsConstraint(const Robots&, unsigned int, unsigned int, double)
 
-    cppbool removeCollision(const QPSolver&, string, string)
+    cppbool removeCollision(const QPSolver&, string, string, cppbool)
     cppbool removeCollisionByBody(const QPSolver&, string, string)
     void addCollision(const QPSolver&, const Collision&) except+
     void addCollisions(const QPSolver& robots, const vector[Collision]&)

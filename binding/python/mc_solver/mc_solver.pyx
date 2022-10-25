@@ -137,12 +137,12 @@ cdef class CollisionsConstraint(ConstraintSet):
     self.__own_impl = True
     if not skip_alloc:
       self.impl = self.cs_base = new c_mc_solver.CollisionsConstraint(deref(robots.impl), r1Index, r2Index, timeStep)
-  def removeCollision(self, QPSolver solver, b1Name, b2Name):
+  def removeCollision(self, QPSolver solver, b1Name, b2Name, reverse):
     if isinstance(b1Name, unicode):
         b1Name = b1Name.encode(u'ascii')
     if isinstance(b2Name, unicode):
         b2Name = b2Name.encode(u'ascii')
-    return self.impl.removeCollision(deref(solver.impl), b1Name, b2Name)
+    return self.impl.removeCollision(deref(solver.impl), b1Name, b2Name, reverse)
   def removeCollisionByBody(self, QPSolver solver, b1Name, b2Name):
     if isinstance(b1Name, unicode):
         b1Name = b1Name.encode(u'ascii')
