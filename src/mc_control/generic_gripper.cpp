@@ -117,9 +117,10 @@ Gripper::Gripper(const mc_rbdyn::Robot & robot,
         return i;
       }
     }
-    mc_rtc::log::error_and_throw<std::runtime_error>("Active joint {} for {} is not part of the reference joint order",
-                                                     joint, robot.name());
+    mc_rtc::log::error_and_throw("Active joint {} for {} is not part of the reference joint order", joint,
+                                 robot.name());
   };
+  is_metric_ = true;
   for(size_t i = 0; i < jointNames.size(); ++i)
   {
     const auto & name = jointNames[i];
@@ -138,6 +139,9 @@ Gripper::Gripper(const mc_rbdyn::Robot & robot,
       }
       vmax.push_back(std::min(std::abs(robot.vl()[jointIndex][0]), robot.vu()[jointIndex][0]));
       _q.push_back(actualQ[i]);
+      bool j_is_metric = robot.mb().joint(static_cast<int>(jointIndex)).type() == rbd::Joint::Type::Prism;
+      is_metric_ = is_metric_ && j_is_metric;
+      reached_threshold_.push_back(j_is_metric ? 0.0001 : 0.001);
     }
     else
     {
@@ -146,6 +150,8 @@ Gripper::Gripper(const mc_rbdyn::Robot & robot,
       openP.push_back(0.01);
       vmax.push_back(0);
       _q.push_back(0);
+      is_metric_ = false;
+      reached_threshold_.push_back(0.001);
     }
     active_joints_idx.push_back(getReferenceIdx(name));
     mult.push_back({i, 1.0});
@@ -160,7 +166,7 @@ Gripper::Gripper(const mc_rbdyn::Robot & robot,
         return i;
       }
     }
-    mc_rtc::log::error_and_throw<std::runtime_error>("Trying to mimic non existant joint: {}", joint);
+    mc_rtc::log::error_and_throw("Trying to mimic non existant joint: {}", joint);
   };
   for(const auto & m : mimics)
   {
@@ -185,7 +191,15 @@ Gripper::Gripper(const mc_rbdyn::Robot & robot,
   {
     if(robot.hasJoint(name))
     {
-      joints_mbc_idx.push_back(static_cast<int>(robot.jointIndexByName(name)));
+      auto jIndex = static_cast<int>(robot.jointIndexByName(name));
+      if(robot.mb().joint(jIndex).dof() == 1)
+      {
+        joints_mbc_idx.push_back(jIndex);
+      }
+      else
+      {
+        joints_mbc_idx.push_back(-1);
+      }
     }
     else
     {
@@ -235,7 +249,7 @@ void Gripper::configure(const mc_rtc::Configuration & config)
       catch(mc_rtc::Configuration::Exception & e)
       {
         e.silence();
-        mc_rtc::log::error_and_throw<std::runtime_error>(
+        mc_rtc::log::error_and_throw(
             "Gripper's target opening must either be a map<Joint name (string), opening (double)> or a double value");
       }
     }
@@ -261,7 +275,7 @@ void Gripper::configure(const mc_rtc::Configuration & config)
       catch(mc_rtc::Configuration::Exception & e)
       {
         e.silence();
-        mc_rtc::log::error_and_throw<std::runtime_error>(
+        mc_rtc::log::error_and_throw(
             "Gripper's target must either be a map<joint name (string), angle (double)> or a vector<double> of size {}",
             activeJoints().size());
       }
@@ -292,9 +306,8 @@ void Gripper::setTargetQ(const std::vector<double> & targetQ)
 {
   if(targetQ.size() != active_joints.size())
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>(
-        "Attempted to set gripper target with {} DoF but this gripper only has {} active DoFs", targetQ.size(),
-        active_joints.size());
+    mc_rtc::log::error_and_throw("Attempted to set gripper target with {} DoF but this gripper only has {} active DoFs",
+                                 targetQ.size(), active_joints.size());
   }
   for(size_t i = 0; i < targetQ.size(); ++i)
   {
@@ -314,7 +327,7 @@ void Gripper::setTargetQ(const std::string & jointName, double targetQ)
   auto it = std::find(active_joints.cbegin(), active_joints.cend(), jointName);
   if(it == active_joints.cend())
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>(
+    mc_rtc::log::error_and_throw(
         "Attempted to set target for the gripper's joint {} but this joint is not part of the gripper", jointName);
   }
   auto jIdx = static_cast<size_t>(std::distance(active_joints.cbegin(), it));
@@ -348,7 +361,7 @@ void Gripper::setTargetOpening(const std::string & jointName, double targetOpeni
   auto it = std::find(active_joints.cbegin(), active_joints.cend(), jointName);
   if(it == active_joints.cend())
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>(
+    mc_rtc::log::error_and_throw(
         "Attempted to set target opening percentage of gripper's joint {} but this joint is not part of the gripper",
         jointName);
   }
@@ -369,7 +382,7 @@ double Gripper::getTargetQ(const std::string & jointName) const
   auto it = std::find(active_joints.cbegin(), active_joints.cend(), jointName);
   if(it == active_joints.cend())
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>(
+    mc_rtc::log::error_and_throw(
         "Attempted to get target for the gripper's joint {} but this joint is not part of the gripper", jointName);
   }
   auto jIdx = static_cast<size_t>(std::distance(active_joints.cbegin(), it));
@@ -391,7 +404,7 @@ double Gripper::getTargetOpening(const std::string & jointName) const
   auto it = std::find(active_joints.cbegin(), active_joints.cend(), jointName);
   if(it == active_joints.cend())
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>(
+    mc_rtc::log::error_and_throw(
         "Attempted to get target opening percentage of gripper's joint {} but this joint is not part of the gripper",
         jointName);
   }
@@ -439,9 +452,9 @@ double Gripper::curOpening(const std::string & jointName) const
   auto it = std::find(active_joints.cbegin(), active_joints.cend(), jointName);
   if(it == active_joints.cend())
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("Attempted to get target opening percentage for the gripper's "
-                                                     "joint {} but this joint is not part of the gripper",
-                                                     jointName);
+    mc_rtc::log::error_and_throw("Attempted to get target opening percentage for the gripper's "
+                                 "joint {} but this joint is not part of the gripper",
+                                 jointName);
   }
   auto jIdx = static_cast<size_t>(std::distance(active_joints.cbegin(), it));
   return curOpening(jIdx);
@@ -472,7 +485,7 @@ void Gripper::run(double timeStep, mc_rbdyn::Robot & robot, std::map<std::string
     bool reached = true;
     for(size_t i = 0; i < cur.size(); ++i)
     {
-      bool i_reached = std::abs(cur[i] - targetQIn[i]) < 0.001;
+      bool i_reached = std::abs(cur[i] - targetQIn[i]) < reached_threshold_[i];
       if(!i_reached)
       {
         if(targetQIn[i] > cur[i])

@@ -34,7 +34,7 @@ void BSpline::update()
       waypoints.push_back(wp);
     }
     waypoints.push_back(target_);
-    spline.reset(new BSpline::bezier_curve_t(waypoints.begin(), waypoints.end(), duration_));
+    spline.reset(new BSpline::bezier_curve_t(waypoints.begin(), waypoints.end(), 0.0, duration_));
     samples_ = this->sampleTrajectory();
     needsUpdate_ = false;
   }
@@ -44,7 +44,7 @@ std::vector<Eigen::Vector3d> BSpline::splev(double t, unsigned int der)
 {
   if(spline == nullptr)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("Invalide BSpline: there should be at least two waypoints");
+    mc_rtc::log::error_and_throw("Invalide BSpline: there should be at least two waypoints");
   }
   std::vector<Eigen::Vector3d> pts;
   pts.reserve(der + 1);

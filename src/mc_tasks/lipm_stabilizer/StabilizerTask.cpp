@@ -22,6 +22,7 @@ namespace lipm_stabilizer
 
 using internal::Contact;
 using ::mc_filter::utils::clamp;
+using ::mc_filter::utils::clampInPlace;
 using ::mc_filter::utils::clampInPlaceAndWarn;
 namespace constants = ::mc_rtc::constants;
 
@@ -122,25 +123,27 @@ void StabilizerTask::reset()
 
   omega_ = std::sqrt(constants::gravity.z() / robot().com().z());
   commitConfig();
+
+  setContacts({ContactState::Left, ContactState::Right});
 }
 
 void StabilizerTask::dimWeight(const Eigen::VectorXd & /* dim */)
 {
-  mc_rtc::log::error_and_throw<std::runtime_error>("dimWeight not implemented for task {}", type_);
+  mc_rtc::log::error_and_throw("dimWeight not implemented for task {}", type_);
 }
 
 Eigen::VectorXd StabilizerTask::dimWeight() const
 {
-  mc_rtc::log::error_and_throw<std::runtime_error>("dimWeight not implemented for task {}", type_);
+  mc_rtc::log::error_and_throw("dimWeight not implemented for task {}", type_);
 }
 
 void StabilizerTask::selectActiveJoints(mc_solver::QPSolver & /* solver */,
                                         const std::vector<std::string> & /* activeJointsName */,
                                         const std::map<std::string, std::vector<std::array<int, 2>>> & /* activeDofs */)
 {
-  mc_rtc::log::error_and_throw<std::runtime_error>("Task {} does not implement selectActiveJoints. Please configure it "
-                                                   "through the stabilizer configuration instead",
-                                                   name_);
+  mc_rtc::log::error_and_throw("Task {} does not implement selectActiveJoints. Please configure it "
+                               "through the stabilizer configuration instead",
+                               name_);
 }
 
 void StabilizerTask::selectUnactiveJoints(
@@ -148,18 +151,16 @@ void StabilizerTask::selectUnactiveJoints(
     const std::vector<std::string> & /* unactiveJointsName */,
     const std::map<std::string, std::vector<std::array<int, 2>>> & /* unactiveDofs */)
 {
-  mc_rtc::log::error_and_throw<std::runtime_error>(
-      "Task {} does not implement selectUnactiveJoints. Please configure it "
-      "through the stabilizer configuration instead.",
-      name_);
+  mc_rtc::log::error_and_throw("Task {} does not implement selectUnactiveJoints. Please configure it "
+                               "through the stabilizer configuration instead.",
+                               name_);
 }
 
 void StabilizerTask::resetJointsSelector(mc_solver::QPSolver & /* solver */)
 {
-  mc_rtc::log::error_and_throw<std::runtime_error>(
-      "Task {} does not implement resetJointsSelector. Please configure it "
-      "through the stabilizer configuration instead.",
-      name_);
+  mc_rtc::log::error_and_throw("Task {} does not implement resetJointsSelector. Please configure it "
+                               "through the stabilizer configuration instead.",
+                               name_);
 }
 
 Eigen::VectorXd StabilizerTask::eval() const
@@ -199,7 +200,7 @@ void StabilizerTask::removeFromSolver(mc_solver::QPSolver & solver)
   MetaTask::removeFromSolver(*comTask, solver);
   MetaTask::removeFromSolver(*pelvisTask, solver);
   MetaTask::removeFromSolver(*torsoTask, solver);
-  for(const auto footTask : contactTasks)
+  for(const auto & footTask : contactTasks)
   {
     MetaTask::removeFromSolver(*footTask, solver);
   }
@@ -253,7 +254,7 @@ void StabilizerTask::update(mc_solver::QPSolver & solver)
   // Update contacts if they have changed
   updateContacts(solver);
 
-  updateState(realRobots_.robot().com(), realRobots_.robot().comVelocity());
+  updateState(realRobots_.robot().com(), realRobots_.robot().comVelocity(), realRobots_.robot().comAcceleration());
 
   // Run stabilizer
   run();
@@ -261,7 +262,7 @@ void StabilizerTask::update(mc_solver::QPSolver & solver)
   MetaTask::update(*comTask, solver);
   MetaTask::update(*pelvisTask, solver);
   MetaTask::update(*torsoTask, solver);
-  for(const auto footTask : contactTasks)
+  for(const auto & footTask : contactTasks)
   {
     MetaTask::update(*footTask, solver);
   }
@@ -332,7 +333,7 @@ void StabilizerTask::commitConfig()
 
 void StabilizerTask::configure_(mc_solver::QPSolver & solver)
 {
-  dcmDerivator_.timeConstant(c_.dcmDerivatorTimeConstant);
+  dcmDerivator_.cutoffPeriod(c_.dcmDerivatorTimeConstant);
   dcmIntegrator_.timeConstant(c_.dcmIntegratorTimeConstant);
   dcmIntegrator_.saturation(c_.safetyThresholds.MAX_AVERAGE_DCM_ERROR);
 
@@ -378,13 +379,11 @@ void StabilizerTask::checkConfiguration(const StabilizerConfiguration & config)
   auto checkSurface = [&](const std::string & surfaceName) {
     if(!robot().hasSurface(surfaceName))
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("[{}] requires a surface named {} in robot {}", name(),
-                                                       surfaceName, robot().name());
+      mc_rtc::log::error_and_throw("[{}] requires a surface named {} in robot {}", name(), surfaceName, robot().name());
     }
     if(!robot().surfaceHasIndirectForceSensor(surfaceName))
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("[{}] Surface {} must have an associated force sensor.", name(),
-                                                       surfaceName);
+      mc_rtc::log::error_and_throw("[{}] Surface {} must have an associated force sensor.", name(), surfaceName);
     }
   };
   checkSurface(config.rightFootSurface);
@@ -474,7 +473,7 @@ void StabilizerTask::setContacts(const std::vector<ContactState> & contacts)
 void StabilizerTask::setContacts(const std::vector<std::pair<ContactState, sva::PTransformd>> & contacts)
 {
   ContactDescriptionVector addContacts;
-  for(const auto contact : contacts)
+  for(const auto & contact : contacts)
   {
     addContacts.push_back({contact.first, {robot(), footTasks[contact.first]->surface(), contact.second, c_.friction}});
   }
@@ -485,9 +484,8 @@ void StabilizerTask::setContacts(const ContactDescriptionVector & contacts)
 {
   if(contacts.empty())
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>(
-        "[StabilizerTask] Cannot set contacts from an empty list, the stabilizer "
-        "requires at least one contact to be set.");
+    mc_rtc::log::error_and_throw("[StabilizerTask] Cannot set contacts from an empty list, the stabilizer "
+                                 "requires at least one contact to be set.");
   }
   contacts_.clear();
 
@@ -548,7 +546,7 @@ void StabilizerTask::setSupportFootGains()
 void StabilizerTask::checkInTheAir()
 {
   inTheAir_ = true;
-  for(const auto footT : footTasks)
+  for(const auto & footT : footTasks)
   {
     inTheAir_ = inTheAir_ && footT.second->measuredWrench().force().z() < c_.safetyThresholds.MIN_DS_PRESSURE;
   }
@@ -734,14 +732,11 @@ void StabilizerTask::run()
   if(!inTheAir_)
   {
     measuredNetWrench_ = robots_.robot(robotIndex_).netWrench(contactSensors);
-    try
+    if(!robots_.robot(robotIndex_)
+            .zmp(measuredZMP_, measuredNetWrench_, zmpFrame_, c_.safetyThresholds.MIN_NET_TOTAL_FORCE_ZMP))
     {
-      measuredZMP_ =
-          robots_.robot(robotIndex_).zmp(measuredNetWrench_, zmpFrame_, c_.safetyThresholds.MIN_NET_TOTAL_FORCE_ZMP);
-    }
-    catch(std::runtime_error & e)
-    {
-      mc_rtc::log::error("[{}] ZMP computation failed, keeping previous value {}", name(), measuredZMP_.transpose());
+      mc_rtc::log::error("[{}] ZMP computation failed, keeping previous value {}", name(),
+                         MC_FMT_STREAMED(measuredZMP_.transpose()));
     }
   }
   else
@@ -775,7 +770,7 @@ void StabilizerTask::run()
 
   // Update orientation tasks according to feet orientation
   sva::PTransformd X_0_a = anchorFrame(robot());
-  Eigen::Matrix3d pelvisOrientation = X_0_a.rotation();
+  Eigen::Matrix3d pelvisOrientation = sva::RotZ(mc_rbdyn::rpyFromMat(X_0_a.rotation())[2]);
   pelvisTask->orientation(pelvisOrientation);
   torsoTask->orientation(mc_rbdyn::rpyToMat({0, c_.torsoPitch, 0}) * pelvisOrientation);
 
@@ -783,10 +778,13 @@ void StabilizerTask::run()
   runTime_ = 1000. * duration_cast<duration<double>>(endTime - startTime).count();
 }
 
-void StabilizerTask::updateState(const Eigen::Vector3d & com, const Eigen::Vector3d & comd)
+void StabilizerTask::updateState(const Eigen::Vector3d & com,
+                                 const Eigen::Vector3d & comd,
+                                 const Eigen::Vector3d & comdd)
 {
   measuredCoM_ = com;
   measuredCoMd_ = comd;
+  measuredCoMdd_ = comdd;
   measuredDCM_ = measuredCoM_ + measuredCoMd_ / omega_;
 }
 
@@ -794,6 +792,11 @@ sva::ForceVecd StabilizerTask::computeDesiredWrench()
 {
   Eigen::Vector3d comError = comTarget_ - measuredCoM_;
   Eigen::Vector3d comdError = comdTarget_ - measuredCoMd_;
+  Eigen::Vector3d comddError = comddTarget_ - measuredCoMdd_;
+
+  Eigen::Vector3d dcmdError = comdError + comddError / omega_;
+  dcmdError.z() = 0.;
+
   dcmError_ = comError + comdError / omega_;
   dcmError_.z() = 0.;
 
@@ -843,6 +846,19 @@ sva::ForceVecd StabilizerTask::computeDesiredWrench()
       comError.head<2>() -= dcmEstimator_.getBias();
       /// the unbiased dcm allows also to get the velocity of the CoM
       comdError.head<2>() = omega_ * (dcmError_.head<2>() - comError.head<2>());
+
+      Eigen::Vector2d comBias = dcmEstimator_.getBias();
+      clampInPlace(comBias, (-c_.dcmBias.comBiasLimit).eval(), c_.dcmBias.comBiasLimit);
+
+      measuredCoMUnbiased_.head<2>() = measuredCoM_.head<2>() + comBias;
+      measuredCoMUnbiased_.z() = measuredCoM_.z();
+
+      if(c_.dcmBias.correctCoMPos)
+      {
+        /// correct the estimated CoM Position
+        measuredCoM_ = measuredCoMUnbiased_;
+      }
+
       measuredDCMUnbiased_ = dcmTarget_ - dcmError_;
     }
     else
@@ -851,16 +867,24 @@ sva::ForceVecd StabilizerTask::computeDesiredWrench()
       dcmEstimatorNeedsReset_ = true;
     }
 
-    dcmDerivator_.update(omega_ * (dcmError_ - zmpError));
+    dcmDerivator_.update(omega_ * (dcmError_ - zmpError), dcmdError);
     dcmIntegrator_.append(dcmError_);
   }
   dcmAverageError_ = dcmIntegrator_.eval();
   dcmVelError_ = dcmDerivator_.eval();
-
+  Eigen::Matrix3d R_0_fb_yaw = sva::RotZ(mc_rbdyn::rpyFromMat(robot().posW().rotation()).z());
   Eigen::Vector3d desiredCoMAccel = comddTarget_;
-  desiredCoMAccel += omega_ * (c_.dcmPropGain * dcmError_ + c_.comdErrorGain * comdError);
-  desiredCoMAccel += omega_ * c_.dcmIntegralGain * dcmAverageError_;
-  desiredCoMAccel += omega_ * c_.dcmDerivGain * dcmVelError_;
+
+  Eigen::Vector3d gain = Eigen::Vector3d{c_.dcmPropGain.x(), c_.dcmPropGain.y(), 0};
+  desiredCoMAccel += omega_ * R_0_fb_yaw.transpose() * gain.cwiseProduct(R_0_fb_yaw * dcmError_);
+
+  gain = Eigen::Vector3d{c_.dcmIntegralGain.x(), c_.dcmIntegralGain.y(), 0};
+  desiredCoMAccel += omega_ * R_0_fb_yaw.transpose() * gain.cwiseProduct(R_0_fb_yaw * dcmAverageError_);
+
+  gain = Eigen::Vector3d{c_.dcmDerivGain.x(), c_.dcmDerivGain.y(), 0};
+  desiredCoMAccel += omega_ * R_0_fb_yaw.transpose() * gain.cwiseProduct(R_0_fb_yaw * dcmVelError_);
+
+  desiredCoMAccel += omega_ * (c_.comdErrorGain * comdError);
   desiredCoMAccel -= omega_ * omega_ * c_.zmpdGain * zmpdTarget_;
 
   // Calculate CoM offset from measured wrench
@@ -959,6 +983,7 @@ void StabilizerTask::distributeWrench(const sva::ForceVecd & desiredWrench)
   const sva::PTransformd & X_0_rc = rightContact.surfacePose();
   const sva::PTransformd & X_0_lankle = leftContact.anklePose();
   const sva::PTransformd & X_0_rankle = rightContact.anklePose();
+  sva::PTransformd X_0_zmp(zmpTarget_);
 
   constexpr unsigned NB_VAR = 6 + 6;
   constexpr unsigned COST_DIM = 6 + NB_VAR + 1;
@@ -967,12 +992,14 @@ void StabilizerTask::distributeWrench(const sva::ForceVecd & desiredWrench)
   A.setZero(COST_DIM, NB_VAR);
   b.setZero(COST_DIM);
 
-  // |w_l_0 + w_r_0 - desiredWrench|^2
+  // |w_l_zmp + w_r_zmp - desiredWrench|^2
+  // We handle moments around the ZMP instead of the world origin to avoid numerical errors due to large moment values.
+  // https://github.com/jrl-umi3218/mc_rtc/pull/285
   auto A_net = A.block<6, 12>(0, 0);
   auto b_net = b.segment<6>(0);
-  A_net.block<6, 6>(0, 0) = Eigen::Matrix6d::Identity();
-  A_net.block<6, 6>(0, 6) = Eigen::Matrix6d::Identity();
-  b_net = desiredWrench.vector();
+  A_net.block<6, 6>(0, 0) = X_0_zmp.dualMatrix();
+  A_net.block<6, 6>(0, 6) = X_0_zmp.dualMatrix();
+  b_net = X_0_zmp.dualMul(desiredWrench).vector();
 
   // |ankle torques|^2
   auto A_lankle = A.block<6, 6>(6, 0);
@@ -1127,10 +1154,19 @@ void StabilizerTask::updateFootForceDifferenceControl()
     return;
   }
 
-  double LFz_d = leftFootTask->targetWrench().force().z();
-  double RFz_d = rightFootTask->targetWrench().force().z();
-  double LFz = leftFootTask->measuredWrench().force().z();
-  double RFz = rightFootTask->measuredWrench().force().z();
+  sva::PTransformd T_0_L(leftFootTask->surfacePose().rotation());
+  sva::PTransformd T_0_R(rightFootTask->surfacePose().rotation());
+
+  // In what follows, vertical foot forces are expressed in their respective
+  // foot sole frames, but foot force difference control expects them to be
+  // written in the world frame, so the following lines are wrong (they miss a
+  // frame transform). Thanks to @Saeed-Mansouri for pointing out this bug
+  // <https://github.com/stephane-caron/lipm_walking_controller/discussions/72>.
+  // T_0_{L/R}.transMul transforms a ForceVecd variable from surface frame to world frame
+  double LFz_d = T_0_L.transMul(leftFootTask->targetWrench()).force().z();
+  double RFz_d = T_0_R.transMul(rightFootTask->targetWrench()).force().z();
+  double LFz = T_0_L.transMul(leftFootTask->measuredWrench()).force().z();
+  double RFz = T_0_R.transMul(rightFootTask->measuredWrench()).force().z();
   dfzForceError_ = (LFz_d - RFz_d) - (LFz - RFz);
 
   double LTz_d = leftFootTask->targetPose().translation().z();
@@ -1144,8 +1180,9 @@ void StabilizerTask::updateFootForceDifferenceControl()
   double dz_vdc = c_.vdcFrequency * vdcHeightError_;
   sva::MotionVecd velF = {{0., 0., 0.}, {0., 0., dz_ctrl}};
   sva::MotionVecd velT = {{0., 0., 0.}, {0., 0., dz_vdc}};
-  leftFootTask->refVelB(0.5 * (velT - velF));
-  rightFootTask->refVelB(0.5 * (velT + velF));
+  // T_0_{L/R} transforms a MotionVecd variable from world frame to surface frame
+  leftFootTask->refVelB(0.5 * (T_0_L * (velT - velF)));
+  rightFootTask->refVelB(0.5 * (T_0_R * (velT + velF)));
 }
 
 template Eigen::Vector3d StabilizerTask::computeCoMOffset<&StabilizerTask::ExternalWrench::target>(

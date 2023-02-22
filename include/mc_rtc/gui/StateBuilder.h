@@ -36,14 +36,14 @@ struct MC_RTC_GUI_DLLAPI StateBuilder
    * - Adding fields to an existing Element
    * - Adding an Element type
    */
-  static constexpr int8_t PROTOCOL_VERSION = 3;
+  static constexpr int8_t PROTOCOL_VERSION = 4;
 
   /** Constructor */
   StateBuilder();
 
   /** Add a given element
    *
-   * T must derive from Element
+   * \tparam T Must derive from Element
    *
    * \param category Category of the element
    *
@@ -51,6 +51,21 @@ struct MC_RTC_GUI_DLLAPI StateBuilder
    */
   template<typename T>
   void addElement(const std::vector<std::string> & category, T element);
+
+  /** Add a given element
+   *
+   * \tparam SourceT Type of the source pointer
+   *
+   * \tparam T Must derive from Element
+   *
+   * \param source Source attached to this object
+   *
+   * \param category Category of the element
+   *
+   * \param element Element added to the GUI
+   */
+  template<typename SourceT, typename T>
+  void addElement(SourceT * source, const std::vector<std::string> & category, T element);
 
   /** Add multiple elements to the same category at once
    *
@@ -62,6 +77,19 @@ struct MC_RTC_GUI_DLLAPI StateBuilder
    */
   template<typename T, typename... Args>
   void addElement(const std::vector<std::string> & category, T element, Args... args);
+
+  /** Add multiple elements to the same category at once
+   *
+   * \param source Source attached to this object
+   *
+   * \param category Category of the elements
+   *
+   * \param element Element added to the GUI
+   *
+   * \param args Other elements added to the GUI
+   */
+  template<typename SourceT, typename T, typename... Args>
+  void addElement(SourceT * source, const std::vector<std::string> & category, T element, Args... args);
 
   /** Add a given element and specify stacking
    *
@@ -76,6 +104,21 @@ struct MC_RTC_GUI_DLLAPI StateBuilder
   template<typename T>
   void addElement(const std::vector<std::string> & category, ElementsStacking stacking, T element);
 
+  /** Add a given element and specify stacking
+   *
+   * T must derive from Element
+   *
+   * \param source Source attached to this object
+   *
+   * \param category Category of the element
+   *
+   * \param stacking Stacking direction
+   *
+   * \param element Element added to the GUI
+   */
+  template<typename SourceT, typename T>
+  void addElement(SourceT * source, const std::vector<std::string> & category, ElementsStacking stacking, T element);
+
   /** Add multiple elements to the same category at once with a specific stacking
    *
    * \param category Category of the elements
@@ -88,6 +131,25 @@ struct MC_RTC_GUI_DLLAPI StateBuilder
    */
   template<typename T, typename... Args>
   void addElement(const std::vector<std::string> & category, ElementsStacking stacking, T element, Args... args);
+
+  /** Add multiple elements to the same category at once with a specific stacking
+   *
+   * \param source Source attached to this object
+   *
+   * \param category Category of the elements
+   *
+   * \param element Element added to the GUI
+   *
+   * \param stacking Stacking direction
+   *
+   * \param args Other elements added to the GUI
+   */
+  template<typename SourceT, typename T, typename... Args>
+  void addElement(SourceT * source,
+                  const std::vector<std::string> & category,
+                  ElementsStacking stacking,
+                  T element,
+                  Args... args);
 
   /** Checks if an element is already in the GUI
    *
@@ -106,6 +168,29 @@ struct MC_RTC_GUI_DLLAPI StateBuilder
 
   /** Remove a single element */
   void removeElement(const std::vector<std::string> & category, const std::string & name);
+
+  /** Remove all elements attached to the given source
+   *
+   * One should prefer to remove a category or target a specific category, otherwise the whole GUI has to be searched to
+   * find matching elements
+   *
+   * For example, if your source has added a category and a few elements in the root:
+   * gui()->removeCategory({"MyCategory"});
+   * gui()->removeElements({}, this);
+   * Should be used instead of:
+   * gui()->removeElements(this);
+   */
+  void removeElements(void * source);
+
+  /** Remove all elements attached to the given source in the specified category
+   *
+   * \param category Category where elements will be searched
+   *
+   * \param source Source that will be searched
+   *
+   * \param recurse Also search for elements in sub-categories of the given category
+   */
+  void removeElements(const std::vector<std::string> & category, void * source, bool recurse = false);
 
   /** Add a plot identified by the provided name
    *
@@ -248,6 +333,9 @@ struct MC_RTC_GUI_DLLAPI StateBuilder
    */
   size_t update(std::vector<char> & data);
 
+  /** Update the plots only */
+  void update();
+
   /** Handle a request */
   bool handleRequest(const std::vector<std::string> & category,
                      const std::string & name,
@@ -269,12 +357,16 @@ struct MC_RTC_GUI_DLLAPI StateBuilder
 
 private:
   template<typename T>
-  void addElementImpl(const std::vector<std::string> & category, ElementsStacking stacking, T element, size_t rem = 0);
+  void addElementImpl(void * source,
+                      const std::vector<std::string> & category,
+                      ElementsStacking stacking,
+                      T element,
+                      size_t rem = 0);
 
   /** Holds static data for the GUI */
   mc_rtc::Configuration data_;
-  /** Callback used to write plot data into the GUI message */
-  using plot_callback_function_t = std::function<void(mc_rtc::MessagePackBuilder &, const std::string &)>;
+  /** Callback used to write/update plot data into the GUI message */
+  using plot_callback_function_t = std::function<void(mc_rtc::MessagePackBuilder &, const std::string &, bool)>;
   struct PlotCallback
   {
     plot::Plot type;
@@ -302,9 +394,10 @@ private:
     std::function<Element &()> element;
     void (*write)(Element &, mc_rtc::MessagePackBuilder &);
     bool (*handleRequest)(Element &, const mc_rtc::Configuration &);
+    void * source;
 
     template<typename T>
-    ElementStore(T self, const Category & category, ElementsStacking stacking);
+    ElementStore(T self, const Category & category, ElementsStacking stacking, void * source);
   };
   struct Category
   {
@@ -331,21 +424,22 @@ private:
 
   /** Get a category
    *
-   * Returns false and parent category if the category does
-   * not exist, true and the request category otherwise
+   * Returns nullptr if the category does not exist
    *
    * \p category Requested category
    *
-   * \p getParent If true returns the parent category,
-   * otherwise returns the category
+   * \p depth Only consider the first \p depth elements in \p category (up-to category's size)
    */
-  std::pair<bool, Category &> getCategory(const std::vector<std::string> & category, bool getParent);
+  Category * getCategory(const std::vector<std::string> & category, size_t depth = std::numeric_limits<size_t>::max());
 
   /** Get a category, creates it if does not exist */
-  Category & getCategory(const std::vector<std::string> & category);
+  Category & getOrCreateCategory(const std::vector<std::string> & category);
 
   /** Update the GUI data state for a given category */
   void update(mc_rtc::MessagePackBuilder & builder, Category & category);
+
+  /** Remove all elements associated to the given in the given category */
+  void removeElements(Category & category, void * source);
 
   std::string cat2str(const std::vector<std::string> & category);
 

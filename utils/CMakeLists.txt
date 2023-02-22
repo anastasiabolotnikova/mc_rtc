@@ -1,9 +1,15 @@
 #
-# Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+# Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
 #
 
 if(NOT DEFINED MC_LOG_UI_PYTHON_EXECUTABLE)
-  set(MC_LOG_UI_PYTHON_EXECUTABLE "python")
+  if(PYTHON_BINDING_FORCE_PYTHON3)
+    set(MC_LOG_UI_PYTHON_EXECUTABLE "python3")
+  elseif(PYTHON_BINDING_FORCE_PYTHON2)
+    set(MC_LOG_UI_PYTHON_EXECUTABLE "python2")
+  else()
+    set(MC_LOG_UI_PYTHON_EXECUTABLE "python")
+  endif()
 endif()
 
 find_package(Boost REQUIRED COMPONENTS program_options timer)
@@ -40,6 +46,11 @@ endif()
 if(NOT MC_RTC_BUILD_STATIC)
   target_link_libraries(mc_bin_utils PRIVATE mpack)
 else()
+endif()
+
+find_program(PYTHON_PGM ${MC_LOG_UI_PYTHON_EXECUTABLE})
+if(NOT PYTHON_PGM)
+  return()
 endif()
 
 configure_file(mc_rtc_new_controller.in.py "${CMAKE_CURRENT_BINARY_DIR}/mc_rtc_new_controller" @ONLY)

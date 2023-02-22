@@ -9,12 +9,6 @@
 #include <mc_rtc/gui/Button.h>
 #include <mc_rtc/logging.h>
 
-#include <RBDyn/EulerIntegration.h>
-#include <RBDyn/FK.h>
-#include <RBDyn/FV.h>
-
-/* Note all service calls except for controller switches are implemented in mc_global_controller_services.cpp */
-
 namespace mc_control
 {
 
@@ -26,11 +20,17 @@ MCHalfSitPoseController::MCHalfSitPoseController(std::shared_ptr<mc_rbdyn::Robot
   /* Set the halfSitPose in posture Task */
   const auto & halfSit = robot_module->stance();
   const auto & ref_joint_order = robot().refJointOrder();
-  for(unsigned int i = 0; i < ref_joint_order.size(); ++i)
+  halfSitPose = postureTask->posture();
+  for(const auto & j : ref_joint_order)
   {
-    if(robot().hasJoint(ref_joint_order[i]))
+    if(robot().hasJoint(j))
     {
-      halfSitPose[robot().jointIndexByName(ref_joint_order[i])] = halfSit.at(ref_joint_order[i]);
+      auto jIndex = robot().jointIndexByName(j);
+      const auto & jTarget = halfSit.at(j);
+      if(halfSitPose[jIndex].size() == jTarget.size())
+      {
+        halfSitPose[jIndex] = jTarget;
+      }
     }
   }
 
@@ -52,8 +52,8 @@ void MCHalfSitPoseController::reset(const ControllerResetData & reset_data)
   postureTask->reset();
   postureTask.get()->weight(100.);
   postureTask.get()->stiffness(2.);
-  rbd::forwardKinematics(robot().mb(), robot().mbc());
-  rbd::forwardVelocity(robot().mb(), robot().mbc());
+  robot().forwardKinematics();
+  robot().forwardVelocity();
   gui_->removeElement({"Controller"}, "Go half-sitting");
   gui_->addElement({"Controller"},
                    mc_rtc::gui::Button("Go half-sitting", [this]() { postureTask->posture(halfSitPose); }));

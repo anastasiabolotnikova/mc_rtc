@@ -5,6 +5,7 @@
 from eigen.c_eigen cimport *
 from sva.c_sva cimport *
 from rbdyn.c_rbdyn cimport *
+from rbdyn.parsers.c_parsers cimport Visual as Visual
 cimport sch.c_sch as sch
 cimport tasks.qp.c_qp
 
@@ -108,6 +109,8 @@ cdef extern from "<mc_rbdyn/RobotModule.h>" namespace "mc_rbdyn":
     vector[Collision] _minimalSelfCollisions
     vector[Collision] _commonSelfCollisions
     const vector[string]& ref_joint_order()
+    map[string, vector[Visual]] _visual
+    map[string, vector[Visual]] _collision
 
     string path
     string name
@@ -123,11 +126,6 @@ cdef extern from "mc_rbdyn_wrapper.hpp" namespace "mc_rbdyn":
 
 cdef extern from "<mc_rbdyn/Robots.h>" namespace "mc_rbdyn":
   cdef cppclass Robots:
-    Robots()
-    Robots(const Robots &)
-
-    const vector[Robot] & robots()
-
     const vector[MultiBody] & mbs()
 
     const vector[MultiBodyConfig] & mbcs()
@@ -141,6 +139,8 @@ cdef extern from "<mc_rbdyn/Robots.h>" namespace "mc_rbdyn":
     Robot & load(const RobotModule&, PTransformd*, const string&)
 
     const Robot & robot(unsigned int)
+
+    unsigned int size()
 
     void createRobotWithBase(const string&, Robots&, unsigned int, const Base&, const Vector3d&)
 
@@ -376,6 +376,12 @@ cdef extern from "<mc_rbdyn/contact_transform.h>" namespace "mc_rbdyn":
   void cylindricalParam(const PTransformd&, double&, double&)
   vector[double] jointParam(const Surface&, const Surface&, const PTransformd&)
 
+cdef extern from "<mc_rbdyn/rpy_utils.h>" namespace "mc_rbdyn":
+  Matrix3d rpyToMat(const double &, const double &, const double &)
+  PTransformd rpyToPT(const double &, const double &, const double &)
+  Vector3d rpyFromMat(const Matrix3d &)
+  Vector3d rpyFromQuat(const Quaterniond &)
+
 cdef extern from "mc_rbdyn_wrapper.hpp" namespace "mc_rbdyn":
   string CollisionToString(const Collision &)
   #FIXME Work-around the lack of variadic template support
@@ -394,7 +400,9 @@ cdef extern from "mc_rbdyn_wrapper.hpp" namespace "mc_rbdyn":
   Contact& const_cast_contact(const Contact&)
   vector[Contact]& const_cast_contact_vector(const vector[Contact]&)
   void contact_vector_set_item(vector[Contact]&, unsigned int, const Contact&)
-  shared_ptr[Robots] robots_fake_shared(Robots*)
+  shared_ptr[Robots] robots_shared_from_ref(Robots&)
+  shared_ptr[Robots] robots_make()
+  shared_ptr[Robots] robots_copy(shared_ptr[Robots])
   PolygonInterpolator * polygonInterpolatorFromTuplePairs(const vector[pair[pair[double, double], pair[double, double]]]&)
   #FIXME Work-around lack of array support
   vector[double] robotModuleDefaultAttitude(RobotModulePtr rm)

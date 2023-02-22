@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-18.04, macos-latest, windows-latest]
+        os: [ubuntu-20.04, ubuntu-18.04, macos-latest, windows-latest]
         build-type: [Debug, RelWithDebInfo, script]
         compiler: [gcc, clang]
         exclude:
@@ -42,15 +42,21 @@ jobs:
     - uses: actions/checkout@v2
       with:
         submodules: recursive
-    - name: Temporary APT mirrors cleanup
-      if: startsWith(runner.os, 'Linux')
+    - name: Linux cleanup
+      if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04'
       run: |
         set -e
-        sudo rm -f /etc/apt/sources.list.d/dotnetdev.list /etc/apt/sources.list.d/microsoft-prod.list
+        echo "LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib/x86_64-linux-gnu/:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
     - name: macOS cleanup
       run: |
         sudo rm '/usr/local/bin/2to3'
       if: startsWith(runner.os, 'macOS')
+    - name: Install pip for Python 2 (Ubuntu 20.04)
+      run: |
+        curl https://bootstrap.pypa.io/pip/2.7/get-pip.py -o get-pip.py
+        sudo python2 get-pip.py
+        rm -f get-pip.py
+      if: matrix.os == 'ubuntu-20.04' && matrix.build-type != 'script'
     - name: Clear environment (script)
       uses: jrl-umi3218/github-actions/install-dependencies@master
       if: matrix.build-type == 'script'
@@ -76,12 +82,12 @@ jobs:
         compiler: ${{ matrix.compiler }}
         build-type: ${{ matrix.build-type }}
         ubuntu: |
-          apt: cython cython3 python-nose python3-nose python-numpy python3-numpy python-coverage python3-coverage python-setuptools python3-setuptools libeigen3-dev doxygen doxygen-latex libboost-all-dev libtinyxml2-dev libgeos++-dev libnanomsg-dev libyaml-cpp-dev libltdl-dev
+          apt: cython cython3 python-nose python-pytest python3-nose python3-pytest python-numpy python3-numpy python-coverage python3-coverage python-setuptools python3-setuptools libeigen3-dev doxygen doxygen-latex libboost-all-dev libtinyxml2-dev libgeos++-dev libnanomsg-dev libyaml-cpp-dev libltdl-dev
         macos: |
           brew: eigen boost tinyxml2 geos nanomsg yaml-cpp pkg-config libtool gcc
-          pip: Cython coverage nose numpy
+          pip: Cython coverage nose numpy pytest
         windows: |
-          pip: Cython coverage nose numpy
+          pip: Cython coverage nose numpy pytest
           github:
             - path: eigenteam/eigen-git-mirror
               ref: 3.3.7
@@ -95,12 +101,13 @@ jobs:
             - path: jbeder/yaml-cpp
               ref: 29dcf92f870ee51cce8d68f8fcfe228942e8dfe1
               options: -DYAML_CPP_BUILD_TESTS:BOOL=OFF
+        windows-options: -DPYTHON_BINDING:BOOL=OFF
         github: |
           - path: gabime/spdlog
             ref: v1.6.1
             options: -DSPDLOG_BUILD_EXAMPLE:BOOL=OFF -DSPDLOG_BUILD_SHARED:BOOL=ON
-          - path: humanoid-path-planner/hpp-spline
-            ref: v4.7.0
+          - path: loco-3d/ndcurves
+            ref: v1.1.5
             options: -DBUILD_PYTHON_INTERFACE:BOOL=OFF
           - path: jrl-umi3218/Eigen3ToPython
           - path: jrl-umi3218/SpaceVecAlg
@@ -120,6 +127,7 @@ jobs:
       with:
         compiler: ${{ matrix.compiler }}
         build-type: ${{ matrix.build-type }}
+        windows-options: -DPYTHON_BINDING:BOOL=OFF
     - name: Build and test (Debug/Fast tests)
       if: matrix.build-type == 'Debug' && github.ref != 'refs/heads/master'
       uses: jrl-umi3218/github-actions/build-cmake-project@master
@@ -128,7 +136,7 @@ jobs:
         build-type: ${{ matrix.build-type }}
         options: '-DENABLE_FAST_TESTS:BOOL=ON'
     - name: Build with ROS
-      if: (matrix.os == 'ubuntu-18.04') && matrix.build-type != 'script'
+      if: (matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04') && matrix.build-type != 'script'
       run: |
         set -e
         set -x
@@ -180,6 +188,16 @@ jobs:
         git commit -m "Website from commit ${GITHUB_SHA}"
         git push origin gh-pages
         popd
+    - name: Debug Windows DLL issue
+      if: failure() && matrix.os == 'windows-latest'
+      shell: bash
+      run: |
+        set -e
+        pwd
+        echo $PATH
+        ls
+        ldd build/tests/RelWithDebInfo/testGUIStateBuilder.exe
+        ldd build/tests/RelWithDebInfo/testDataStore.exe
     - name: Slack Notification
       if: failure()
       uses: archive/github-actions-slack@master

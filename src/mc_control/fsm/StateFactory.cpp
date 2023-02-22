@@ -15,7 +15,7 @@ namespace fsm
 {
 
 StateFactory::StateFactory(const std::vector<std::string> & paths, const std::vector<std::string> & files, bool verbose)
-: mc_rtc::ObjectLoader<State>("MC_RTC_FSM_STATE", {}, false, verbose)
+: mc_rtc::ObjectLoader<State>("MC_RTC_FSM_STATE", {}, verbose)
 {
   load_libraries(paths);
   load_files(files);
@@ -190,12 +190,12 @@ void StateFactory::load(const std::string & name, const std::string & base, cons
 {
   if(!hasState(base) && !load_with_loader(base))
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("Cannot create a state using a base {} that does not exist", base);
+    mc_rtc::log::error_and_throw("Cannot create a state using a base {} that does not exist", base);
   }
   if(hasState(name))
   {
 #ifndef MC_RTC_BUILD_STATIC
-    mc_rtc::log::error_and_throw<std::runtime_error>("State {} already exists", name);
+    mc_rtc::log::error_and_throw("State {} already exists", name);
 #else
     states_.erase(std::find(states_.begin(), states_.end(), name));
 #endif
@@ -205,11 +205,7 @@ void StateFactory::load(const std::string & name, const std::string & base, cons
     mc_rtc::log::info("New state from file: {} (base: {})", name, base);
   }
   states_.push_back(name);
-  states_factories_[name] = [config, base](StateFactory & f) {
-    auto ret = f.create(base);
-    ret->configure_(config);
-    return ret;
-  };
+  states_configurations_[name] = {base, "", config};
 }
 
 StatePtr StateFactory::create(const std::string & state, Controller & ctl, const mc_rtc::Configuration & config)
@@ -227,13 +223,12 @@ StatePtr StateFactory::create(const std::string & state,
                               bool configure,
                               const mc_rtc::Configuration & config)
 {
-  StatePtr ret = create(state);
+  StatePtr ret = create(state, state);
   if(!ret)
   {
     mc_rtc::log::error("Creation of {} state failed", state);
     return nullptr;
   }
-  ret->name(state);
   if(configure)
   {
     ret->configure_(config);
@@ -242,8 +237,21 @@ StatePtr StateFactory::create(const std::string & state,
   return ret;
 }
 
+StatePtr StateFactory::create(const std::string & state, const mc_rtc::Configuration & config)
+{
+  StatePtr ret = create(state);
+  ret->configure_(config);
+  return ret;
+}
+
 StatePtr StateFactory::create(const std::string & state)
 {
+  return create(state, state);
+}
+
+StatePtr StateFactory::create(const std::string & state, const std::string & final_name)
+{
+  StatePtr ret = nullptr;
   if(!hasState(state))
   {
     mc_rtc::log::error("Attempted to create unavailable state {}", state);
@@ -251,12 +259,29 @@ StatePtr StateFactory::create(const std::string & state)
   }
   if(has_object(state))
   {
-    return create_object(state);
+    ret = create_object(state);
+    ret->name(final_name);
   }
-  else
+  else if(states_configurations_.count(state))
   {
-    return states_factories_[state](*this);
+    const auto & config = states_configurations_[state];
+    if(config.arg.size())
+    {
+      ret = create_object(config.base, config.arg);
+      ret->name(final_name);
+    }
+    else
+    {
+      ret = create(config.base, final_name);
+    }
+    ret->configure_(config.config);
   }
+  if(!ret)
+  {
+    mc_rtc::log::error("Creation of {} state failed", state);
+    return nullptr;
+  }
+  return ret;
 }
 
 bool StateFactory::hasState(const std::string & state) const
@@ -283,7 +308,7 @@ bool StateFactory::load_with_loader(const std::string & state)
     mc_rtc::log::info("New state: {} provided by loader: {}", state, loader);
   }
   states_.push_back(state);
-  states_factories_[state] = [loader, arg](StateFactory & factory) { return factory.create_object(loader, arg); };
+  states_configurations_[state] = {loader, arg, {}};
   return true;
 }
 

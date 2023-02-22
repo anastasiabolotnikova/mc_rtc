@@ -1,10 +1,9 @@
 #
-# Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+# Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
 #
 
 set(LOG_ENABLED "false")
 set(LOG_POLICY "non-threaded")
-set(USE_SANDBOX "true")
 set(ENABLED_OBSERVERS "")
 set(RUN_OBSERVERS "")
 set(UPDATE_OBSERVERS "")
@@ -14,6 +13,13 @@ if(WIN32)
 else()
   set(LOG_DIRECTORY "/tmp")
 endif()
+
+find_program(PYTHON_PGM python3 NAMES python python2)
+macro(AddLogTest NAME CTL_NAME NRITER UTILS_BIN_DIR)
+  if(PYTHON_PGM)
+    add_test(NAME "${NAME}" COMMAND "${PYTHON_PGM}" "${CMAKE_CURRENT_SOURCE_DIR}/check_log.py" "${CTL_NAME}" ${NRITER} "${UTILS_BIN_DIR}")
+  endif()
+endmacro()
 
 macro(mc_rtc_add_test)
 cmake_parse_arguments(MC_RTC_TEST "" "NAME;COMMAND" "" ${ARGN} )
@@ -83,34 +89,60 @@ endmacro()
 
 macro(controller_test_run NAME NRITER)
   controller_test_common(${NAME})
-  if(CMAKE_CONFIGURATION_TYPES)
-    set(CONFIG_OUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}/$<CONFIG>/mc_rtc-${NAME}.conf")
-    file(GENERATE
-       OUTPUT ${CONFIG_OUT}
-       INPUT ${CMAKE_CURRENT_BINARY_DIR}/${NAME}/mc_rtc-${NAME}.conf)
-  else()
-    set(CONFIG_OUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}/mc_rtc-${NAME}.conf")
-  endif()
-  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${NAME}.in.yaml")
-    configure_file(${NAME}.in.yaml "${CMAKE_CURRENT_BINARY_DIR}/${NAME}/etc/${NAME}.cmake.yaml")
+  macro(setup_test_run VARIANT)
     if(CMAKE_CONFIGURATION_TYPES)
+      set(CONFIG_OUT "${CMAKE_CURRENT_BINARY_DIR}/${VARIANT}/$<CONFIG>/mc_rtc-${VARIANT}.conf")
       file(GENERATE
-        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}/$<CONFIG>/etc/${NAME}.yaml"
-        INPUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}/etc/${NAME}.cmake.yaml")
+         OUTPUT ${CONFIG_OUT}
+         INPUT ${CMAKE_CURRENT_BINARY_DIR}/${VARIANT}/mc_rtc-${VARIANT}.conf)
     else()
-      file(GENERATE
-        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}/etc/${NAME}.yaml"
-        INPUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}/etc/${NAME}.cmake.yaml")
+      set(CONFIG_OUT "${CMAKE_CURRENT_BINARY_DIR}/${VARIANT}/mc_rtc-${VARIANT}.conf")
     endif()
-  endif()
-  set_target_properties(${NAME} PROPERTIES FOLDER tests/controllers/run)
-  if(ENABLE_FAST_TESTS)
-    set(ACTUALITER 5)
-  else()
-    set(ACTUALITER ${NRITER})
-  endif()
-  mc_rtc_add_test(NAME ${NAME} COMMAND test_controller_ticker --run_test=RUN -- ${CONFIG_OUT} ${ACTUALITER})
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${NAME}.in.yaml")
+      configure_file(${NAME}.in.yaml "${CMAKE_CURRENT_BINARY_DIR}/${NAME}/etc/${VARIANT}.cmake.yaml")
+      if(CMAKE_CONFIGURATION_TYPES)
+        file(GENERATE
+          OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}/$<CONFIG>/etc/${VARIANT}.yaml"
+          INPUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}/etc/${VARIANT}.cmake.yaml")
+      else()
+        file(GENERATE
+          OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}/etc/${VARIANT}.yaml"
+          INPUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}/etc/${VARIANT}.cmake.yaml")
+      endif()
+    endif()
+    if(TARGET ${VARIANT})
+      set_target_properties(${VARIANT} PROPERTIES FOLDER tests/controllers/run/details)
+    endif()
+    if(ENABLE_FAST_TESTS)
+      set(ACTUALITER 5)
+    else()
+      set(ACTUALITER ${NRITER})
+    endif()
+    mc_rtc_add_test(NAME ${VARIANT} COMMAND test_controller_ticker --run_test=RUN -- ${CONFIG_OUT} ${ACTUALITER})
+    # Add a custom target to run the controller in real-time and to run the test in IDE
+    add_custom_target(
+      controller-test-run-${VARIANT}
+      COMMAND test_controller_ticker --run_test=RUN -- ${CONFIG_OUT} ${NRITER} "" 1
+      DEPENDS ${NAME}
+      VERBATIM
+      USES_TERMINAL
+    )
+    set_target_properties(controller-test-run-${VARIANT} PROPERTIES FOLDER tests/controllers/run)
+  endmacro()
+  setup_test_run(${NAME})
 endmacro()
+
+function(setup_test_log_fixture CTL_TEST LOG_TEST)
+  foreach(L_TEST ${LOG_TEST})
+    if(NOT TEST ${L_TEST})
+      return()
+    endif()
+  endforeach()
+  set_tests_properties(${CTL_TEST} PROPERTIES FIXTURES_SETUP ${CTL_TEST} FIXTURES_REQUIRED "${LOG_TEST}")
+  foreach(L_TEST ${LOG_TEST})
+    set_tests_properties(${L_TEST} PROPERTIES FIXTURES_CLEANUP ${L_TEST} FIXTURES_REQUIRED ${CTL_TEST})
+  endforeach()
+endfunction()
 
 controller_test_construction_failure(NotAController)
 controller_test_construction_failure(NoDestroyController)
@@ -118,8 +150,8 @@ controller_test_construction_failure(NoCreateController)
 
 set(LOG_ENABLED "true")
 controller_test_run(TestPostureController 1000)
-# These tests require a /tmp LogDirectory and symlinks to access the
-# *-latest.log symlink created by mc_rtc
+
+# These tests do not work when building in a chroot such as during Debian packaging
 if(NOT DEFINED PYTHON_DEB_ROOT)
   set(UTILS_BIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../utils)
   if(CMAKE_CONFIGURATION_TYPES)
@@ -130,7 +162,8 @@ if(NOT DEFINED PYTHON_DEB_ROOT)
   else()
     set(NRITER 1000)
   endif()
-  add_test(NAME TestPostureControllerLog COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/check_log.py" "TestPostureController" ${NRITER} ${UTILS_BIN_DIR})
+  AddLogTest(TestPostureControllerLog "TestPostureController" ${NRITER} ${UTILS_BIN_DIR})
+  setup_test_log_fixture(TestPostureController TestPostureControllerLog)
 
   # Test threaded log policy
   set(LOG_POLICY "threaded")
@@ -146,8 +179,9 @@ if(NOT DEFINED PYTHON_DEB_ROOT)
   else()
     set(NRITER 1500)
   endif()
-  add_test(NAME TestPostureControllerThreadedLogging COMMAND test_controller_ticker --run_test=RUN -- "${CONFIG_OUT}" ${NRITER})
-  add_test(NAME TestPostureControllerThreadedLog COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/check_log.py" "TestPostureController" ${NRITER} "${UTILS_BIN_DIR}")
+  add_test(NAME TestPostureControllerThreaded COMMAND test_controller_ticker --run_test=RUN -- "${CONFIG_OUT}" ${NRITER})
+  AddLogTest(TestPostureControllerThreadedLog "TestPostureController" ${NRITER} "${UTILS_BIN_DIR}")
+  setup_test_log_fixture(TestPostureControllerThreaded TestPostureControllerThreadedLog)
 
   # Test controller switch and threaded log policy
   add_library(TestPostureController2 SHARED TestPostureController2.cpp)
@@ -174,19 +208,26 @@ if(NOT DEFINED PYTHON_DEB_ROOT)
   else()
     set(NRITER 1200)
   endif()
-  mc_rtc_add_test(NAME TestPostureController2 COMMAND test_controller_ticker --run_test=RUN -- "${CONFIG_OUT}" ${NRITER} TestPostureController2)
-  add_test(NAME TestPostureControllerControllerSwitchThreadedLog COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/check_log.py" "TestPostureController" ${NRITER} "${UTILS_BIN_DIR}")
-  add_test(NAME TestPostureController2ControllerSwitchThreadedLog COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/check_log.py" "TestPostureController2" ${NRITER} "${UTILS_BIN_DIR}")
+  mc_rtc_add_test(NAME TestControllerSwitch COMMAND test_controller_ticker --run_test=RUN -- "${CONFIG_OUT}" ${NRITER} TestPostureController2)
+  AddLogTest(TestControllerSwitchLog1 "TestPostureController" ${NRITER} "${UTILS_BIN_DIR}")
+  AddLogTest(TestControllerSwitchLog2 "TestPostureController2" ${NRITER} "${UTILS_BIN_DIR}")
+  setup_test_log_fixture(TestControllerSwitch "TestControllerSwitchLog1;TestControllerSwitchLog2")
 endif()
 
-set(USE_SANDBOX "false")
 set(LOG_ENABLED "false")
 set(LOG_POLICY "non-threaded")
 # mc_task test controllers
 controller_test_run(TestCoMTaskController 4001)
+controller_test_run(TestMomentumTaskController 2001)
+controller_test_run(TestGazeTaskController 501)
+controller_test_run(TestPBVSTaskController 1001)
 controller_test_run(TestPositionTaskController 5000)
 controller_test_run(TestOrientationTaskController 6001)
 controller_test_run(TestEndEffectorTaskController 4001)
+controller_test_run(TestVectorOrientationTaskController 2001)
+# mc_solver test controllers
+controller_test_run(TestCoMInBoxController 4001)
+controller_test_run(TestCollisionController 2001)
 
 # Test FSM generic state configuration option
 set(FSM_STATES_INSTALL_PREFIX "${PROJECT_BINARY_DIR}/src/mc_control/fsm/states/")
@@ -195,6 +236,13 @@ if(CMAKE_CONFIGURATION_TYPES)
 endif()
 controller_test_run(TestFSMStateOptions 100)
 target_link_libraries(TestFSMStateOptions PUBLIC mc_control_fsm)
+
+set(FSM_TEST_STATES_DIR "${CMAKE_BINARY_DIR}/tests/fsm_states/TestMetaContinuity")
+if(CMAKE_CONFIGURATION_TYPES)
+  set(FSM_TEST_STATES_DIR "${FSM_TEST_STATES_DIR}/$<CONFIGURATION>")
+endif()
+controller_test_run(TestFSMMetaContinuity 20)
+target_link_libraries(TestFSMMetaContinuity PUBLIC mc_control_fsm)
 
 set(ENABLED_OBSERVERS "\"Encoder\", \"BodySensor\", \"KinematicInertial\"")
 set(RUN_OBSERVERS "\"Encoder\", \"BodySensor\"")
@@ -240,12 +288,14 @@ endmacro()
 controller_sample_test_run(CoM "" 1000)
 controller_sample_test_run(EndEffector "" 1000)
 controller_sample_test_run(Posture "" 1000)
+
 if(ENABLE_FAST_TESTS)
   set(ACTUALITER 5)
 else()
   set(ACTUALITER 20)
 endif()
 add_test(NAME "test_controller_restart" COMMAND test_controller_restart ${CONFIG_OUT} ${ACTUALITER})
+
 controller_sample_test_run(Text "" 1000)
 file(GENERATE OUTPUT "${TEST_CONTROLLER_PATH}/etc/Text.conf" INPUT "${PROJECT_SOURCE_DIR}/src/mc_control/samples/Text/etc/Text.conf")
 
@@ -307,7 +357,7 @@ set_target_properties(TestPluginController PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/TestPluginController"
 )
 set(TEST_CONTROLLER_NAME "TestPluginController_1_2\", \"TestPluginController_2_3")
-set(TEST_PLUGINS "Plugin0")
+set(TEST_PLUGINS "\"Plugin0\"")
 set(PLUGINS_MODULE_PATH "${CMAKE_CURRENT_BINARY_DIR}/TestPlugin")
 foreach(I RANGE 0 3)
   file(WRITE "${PLUGINS_MODULE_PATH}/etc/Plugin${I}.yaml" "common: Plugin${I}")
@@ -362,7 +412,6 @@ mc_rtc_add_test(NAME TestPluginController COMMAND test_controller_ticker --run_t
 # Test Python bindings
 if(PYTHON_BINDING)
   file(READ "ObserverPipelinesPython.json" OBSERVER_PIPELINES)
-  set(USE_SANDBOX "false")
   set(LOG_ENABLED "true")
   get_python_names(python_names)
   foreach(PYTHON ${python_names})
@@ -401,9 +450,10 @@ if(PYTHON_BINDING)
     else()
       set(NRITER 400)
     endif()
-    add_test(NAME "Test${PYTHON}Controller" COMMAND ${CMAKE_COMMAND} -E env "PYTHONPATH=${PYTHONPATH}${PATH_SEP}$ENV{PYTHONPATH}" ${CMAKE_COMMAND} -E env "${LDPATH_VAR}=${LDPATH}${PATH_SEP}${LDPATH_VAR}=${LDPATH_CONTROL}${PATH_SEP}$ENV{${LDPATH_VAR}}" $<TARGET_FILE:test_controller_ticker> --run_test=RUN -- "${CONFIG_OUT}" ${NRITER} "")
+    add_test(NAME "Test${PYTHON}Controller" COMMAND ${CMAKE_COMMAND} -E env "PYTHONPATH=${PYTHONPATH}${PATH_SEP}$ENV{PYTHONPATH}" ${CMAKE_COMMAND} -E env "${LDPATH_VAR}=${LDPATH}${PATH_SEP}${LDPATH_CONTROL}${PATH_SEP}$ENV{${LDPATH_VAR}}" $<TARGET_FILE:test_controller_ticker> --run_test=RUN -- "${CONFIG_OUT}" ${NRITER} "")
     if(NOT DEFINED PYTHON_DEB_ROOT)
-      add_test(NAME Test${PYTHON}Log COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/check_log.py" "${TEST_CONTROLLER_NAME}" ${NRITER} "${UTILS_BIN_DIR}")
+      AddLogTest(Test${PYTHON}Log "${TEST_CONTROLLER_NAME}" ${NRITER} "${UTILS_BIN_DIR}")
+      setup_test_log_fixture(Test${PYTHON}Controller Test${PYTHON}Log)
     endif()
   endforeach()
   unset(OBSERVER_PIPELINES)

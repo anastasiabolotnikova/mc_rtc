@@ -48,23 +48,18 @@ void ParallelState::DelayedState::createState(Controller & ctl)
   state_ = ctl.factory().create(name_, ctl, config_);
 }
 
-void ParallelState::configure(const mc_rtc::Configuration & config)
-{
-  config_.load(config);
-}
-
 void ParallelState::start(Controller & ctl)
 {
   std::vector<std::string> states = config_("states");
   if(states.size() == 0)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("ParallelState requires at least one state to run");
+    mc_rtc::log::error_and_throw("ParallelState requires at least one state to run");
   }
   for(const auto & s : states)
   {
     if(!ctl.factory().hasState(s))
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("{}: {} is not available", name(), s);
+      mc_rtc::log::error_and_throw("{}: {} is not available", name(), s);
     }
   }
   // Check validity of output states names
@@ -73,9 +68,9 @@ void ParallelState::start(Controller & ctl)
   {
     if(std::find(states.begin(), states.end(), sName) == states.end())
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("[{}] Invalid output state name {}. It should be one of the "
-                                                       "following states: {}. Check your \"outputs\" configuration.",
-                                                       name(), sName, mc_rtc::io::to_string(states));
+      mc_rtc::log::error_and_throw("[{}] Invalid output state name {}. It should be one of the "
+                                   "following states: {}. Check your \"outputs\" configuration.",
+                                   name(), sName, mc_rtc::io::to_string(states));
     }
   }
   auto states_config = config_("configs", mc_rtc::Configuration{});
@@ -167,6 +162,16 @@ bool ParallelState::read_write_msg(std::string & msg, std::string & out)
     }
   }
   return false;
+}
+
+std::vector<std::string> ParallelState::states() const
+{
+  return config_("states");
+}
+
+std::map<std::string, mc_rtc::Configuration> ParallelState::configs() const
+{
+  return config_("configs", mc_rtc::Configuration{});
 }
 
 } // namespace fsm

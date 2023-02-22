@@ -14,6 +14,8 @@ cimport sva.sva as sva
 
 cimport rbdyn.c_rbdyn as c_rbdyn
 cimport rbdyn.rbdyn as rbdyn
+cimport rbdyn.parsers.c_parsers as c_rbdyn_parsers
+cimport rbdyn.parsers.parsers as rbdyn_parsers
 
 cimport sch.sch as sch
 cimport tasks.qp.qp
@@ -416,6 +418,22 @@ cdef class RobotModule(object):
     def __get__(self):
       assert(self.impl.get())
       return rbdyn.MultiBodyGraphFromC(deref(self.impl).mbg, copy = False)
+  property _visual:
+    def __get__(self):
+      res = {}
+      for it in deref(self.impl)._visual:
+        res[it.first] = []
+        for v in it.second:
+          res[it.first].append(rbdyn_parsers.VisualFromC(v))
+      return res
+  property _collision:
+    def __get__(self):
+      res = {}
+      for it in deref(self.impl)._collision:
+        res[it.first] = []
+        for c in it.second:
+          res[it.first].append(rbdyn_parsers.VisualFromC(c))
+      return res
 
 cdef RobotModule RobotModuleFromC(const c_mc_rbdyn.RobotModulePtr v):
   cdef RobotModule ret = RobotModule()
@@ -485,23 +503,20 @@ def get_robot_module(name, *args):
 
 cdef class Robots(object):
   def __copyctor__(self, Robots other):
-    self.impl = shared_ptr[c_mc_rbdyn.Robots](new c_mc_rbdyn.Robots(deref(other.impl.get())))
+    self.impl = c_mc_rbdyn.robots_copy(other.impl)
   def __cinit__(self, *args, skip_alloc = False):
     if len(args) == 0:
       if not skip_alloc:
-        self.impl = shared_ptr[c_mc_rbdyn.Robots](new c_mc_rbdyn.Robots())
+        self.impl = c_mc_rbdyn.robots_make()
     elif len(args) == 1 and isinstance(args[0], Robots):
       self.__copyctor__(args[0])
     else:
       raise TypeError("Wrong arguments passed to Robots ctor")
 
   def robots(self):
-    end = deref(self.impl).robots().end()
-    it = deref(self.impl).robots().begin()
     ret = []
-    while it != end:
-      ret.append(RobotFromC(deref(it)))
-      preinc(it)
+    for i in range(deref(self.impl).size()):
+      ret.append(self.Robot(i))
     return ret
 
   def load(self, RobotModule module, *args):
@@ -543,13 +558,8 @@ cdef Robots RobotsFromPtr(shared_ptr[c_mc_rbdyn.Robots] p):
     ret.impl = p
     return ret
 
-cdef Robots RobotsFromRawPtr(c_mc_rbdyn.Robots * p):
-    cdef Robots ret = Robots(skip_alloc = True)
-    ret.impl = c_mc_rbdyn.robots_fake_shared(p)
-    return ret
-
 cdef Robots RobotsFromRef(c_mc_rbdyn.Robots & p):
-    return RobotsFromRawPtr(&p)
+    return RobotsFromPtr(c_mc_rbdyn.robots_shared_from_ref(p))
 
 cdef class Robot(object):
   def __is_valid(self):
@@ -1399,3 +1409,27 @@ def robotCopy(robots, robot_idx = None):
   else:
     raise TypeError("Wrong arguments passed to robotCopy")
   return ret
+
+def rpyToMat(*args):
+  if len(args) == 1:
+    assert len(args[0]) == 3, "Sequence argument must be of length 3"
+    return eigen.Matrix3dFromC(c_mc_rbdyn.rpyToMat(args[0][0], args[0][1], args[0][2]))
+  elif len(args) == 3:
+    return eigen.Matrix3dFromC(c_mc_rbdyn.rpyToMat(args[0], args[1], args[2]))
+  else:
+    raise TypeError("rpyToMat expect one argument of length 3 or 3 arguments")
+
+def rpyToPT(*args):
+  if len(args) == 1:
+    assert len(args[0]) == 3, "Sequence argument must be of length 3"
+    return sva.PTransformdFromC(c_mc_rbdyn.rpyToPT(args[0][0], args[0][1], args[0][2]))
+  elif len(args) == 3:
+    return sva.PTransformdFromC(c_mc_rbdyn.rpyToPT(args[0], args[1], args[2]))
+  else:
+    raise TypeError("rpyToPT expect one argument of length 3 or 3 arguments")
+
+def rpyFromMat(eigen.Matrix3d mat):
+  return eigen.Vector3dFromC(c_mc_rbdyn.rpyFromMat(mat.impl))
+
+def rpyFromQuat(eigen.Quaterniond quat):
+  return eigen.Vector3dFromC(c_mc_rbdyn.rpyFromQuat(quat.impl))

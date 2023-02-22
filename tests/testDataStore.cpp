@@ -132,21 +132,21 @@ BOOST_AUTO_TEST_CASE(TestRobotDataStore)
                                                      std::string("ground"));
 
   DataStore store;
-  auto & robots = store.make<mc_rbdyn::Robots>("robots");
-  robots.load({rm, env});
-  BOOST_REQUIRE(robots.size() == 2);
+  auto & robots = store.make<mc_rbdyn::RobotsPtr>("robots", mc_rbdyn::Robots::make());
+  robots->load({rm, env});
+  BOOST_REQUIRE(robots->size() == 2);
 
   // Get another reference to robots
-  auto & robots2 = store.get<mc_rbdyn::Robots>("robots");
-  BOOST_REQUIRE(robots2.size() == 2);
+  auto & robots2 = store.get<mc_rbdyn::RobotsPtr>("robots");
+  BOOST_REQUIRE(robots2->size() == 2);
 
-  robots.robot().posW(sva::PTransformd(Eigen::Vector3d{42, 42, 42}));
-  BOOST_CHECK_CLOSE(robots.robot().posW().translation().x(), 42, 1e-10);
-  BOOST_CHECK_CLOSE(robots.robot().posW().translation().y(), 42, 1e-10);
-  BOOST_CHECK_CLOSE(robots.robot().posW().translation().z(), 42, 1e-10);
-  BOOST_CHECK_CLOSE(robots2.robot().posW().translation().x(), 42, 1e-10);
-  BOOST_CHECK_CLOSE(robots2.robot().posW().translation().y(), 42, 1e-10);
-  BOOST_CHECK_CLOSE(robots2.robot().posW().translation().z(), 42, 1e-10);
+  robots->robot().posW(sva::PTransformd(Eigen::Vector3d{42, 42, 42}));
+  BOOST_CHECK_CLOSE(robots->robot().posW().translation().x(), 42, 1e-10);
+  BOOST_CHECK_CLOSE(robots->robot().posW().translation().y(), 42, 1e-10);
+  BOOST_CHECK_CLOSE(robots->robot().posW().translation().z(), 42, 1e-10);
+  BOOST_CHECK_CLOSE(robots2->robot().posW().translation().x(), 42, 1e-10);
+  BOOST_CHECK_CLOSE(robots2->robot().posW().translation().y(), 42, 1e-10);
+  BOOST_CHECK_CLOSE(robots2->robot().posW().translation().z(), 42, 1e-10);
 }
 
 BOOST_AUTO_TEST_CASE(Lambda)
@@ -417,6 +417,8 @@ struct aligned_allocator<Overloaded> : public std::allocator<Overloaded>
 bool aligned_allocator<Overloaded>::used = false;
 } // namespace Eigen
 
+// EIGEN_MAKE_ALIGNED_OPERATOR_NEW is no-op in C++17 from 3.4.0
+#if !EIGEN_VERSION_AT_LEAST(3, 4, 0)
 BOOST_AUTO_TEST_CASE(EigenOverloadOperatorNew)
 {
   DataStore store;
@@ -426,6 +428,7 @@ BOOST_AUTO_TEST_CASE(EigenOverloadOperatorNew)
   store.remove("overloaded");
   BOOST_CHECK(Eigen::aligned_allocator<Overloaded>::used == false);
 }
+#endif
 
 BOOST_AUTO_TEST_CASE(TestStabilizer)
 {

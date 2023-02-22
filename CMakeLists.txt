@@ -2,7 +2,7 @@
 # Copyright 2015-2020 CNRS-UM LIRMM, CNRS-AIST JRL
 #
 
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.8)
 if(POLICY CMP0063)
   cmake_policy(SET CMP0063 NEW)
 endif()
@@ -12,17 +12,21 @@ endif()
 
 set(PROJECT_NAME mc_rtc)
 set(PROJECT_DESCRIPTION mc_rtc)
-set(PROJECT_VERSION 1.8.2)
+set(PROJECT_VERSION 1.13.0)
 set(PROJECT_URL https://gite.lirmm.fr/multi-contact/mc_rtc)
 set(PROJECT_DEBUG_POSTFIX "_d")
 set(PROJECT_USE_KEYWORD_LINK_LIBRARIES TRUE)
 set(PROJECT_USE_CMAKE_EXPORT TRUE)
+set(PROJECT_CUSTOM_HEADER_DIR "mc_rtc/macros")
+set(PROJECT_CUSTOM_HEADER_EXTENSION "h")
+set(PROJECT_GENERATED_HEADERS_SKIP_CONFIG ON)
+set(PROJECT_GENERATED_HEADERS_SKIP_WARNING ON)
 
 set(DOXYGEN_USE_MATHJAX "YES")
 set(CXX_DISABLE_WERROR 1)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_C_STANDARD 99)
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 
 include(cmake/base.cmake)
 include(cmake/cython/cython.cmake)
@@ -61,20 +65,38 @@ option(MC_RTC_DEVELOPER_MODE "Disable exact version embedding to speed up recomp
 
 option(DISABLE_ROS "Build without ROS support (even if ROS was found)" OFF)
 
-add_project_dependency(Boost REQUIRED COMPONENTS filesystem timer)
+set(BOOST_STACKTRACE "")
+set(BOOST_USE_STACKTRACE_DEFINE "")
+function(find_best_boost_stacktrace)
+  set(stacktrace_variants backtrace addr2line basic)
+  if(WIN32)
+    set(stacktrace_variants windbg ${stacktrace_variants})
+  endif()
+  foreach(variant ${stacktrace_variants})
+    find_package(Boost QUIET COMPONENTS stacktrace_${variant})
+    string(TOUPPER "${variant}" VARIANT)
+    if(Boost_stacktrace_${variant}_FOUND OR Boost_STACKTRACE_${VARIANT}_FOUND)
+      set(BOOST_STACKTRACE stacktrace_${variant} PARENT_SCOPE)
+      set(BOOST_USE_STACKTRACE_DEFINE "BOOST_STACKTRACE_USE_${VARIANT}" PARENT_SCOPE)
+      return()
+    endif()
+  endforeach()
+endfunction()
+find_best_boost_stacktrace()
+if(BOOST_STACKTRACE STREQUAL "")
+  message(FATAL_ERROR "No suitable Boost.Stacktrace installed, maybe you are missing some dependencies")
+endif()
+
+add_project_dependency(Boost REQUIRED COMPONENTS filesystem timer ${BOOST_STACKTRACE})
 add_project_dependency(Tasks REQUIRED)
-add_project_dependency(mc_rbdyn_urdf REQUIRED)
 if(NOT TARGET RBDyn::Parsers)
   message(FATAL_ERROR "RBDyn must be built with parsers support")
 endif()
 add_project_dependency(eigen-quadprog REQUIRED)
 add_project_dependency(state-observation REQUIRED)
-
+add_project_dependency(ndcurves REQUIRED)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/CMakeModules)
-
-# hpp-spline (defines target: mc_rtc_3rd_party::hpp-spline)
-find_package(mc_rtc_3rd_party_hpp-spline REQUIRED)
 
 if(NOT MC_RTC_BUILD_STATIC)
   # LTDL (defines target: mc_rtc_3rd_party::ltdl)
@@ -133,13 +155,13 @@ find_description_package(mc_env_description)
 find_description_package(mc_int_obj_description)
 
 macro(mc_rtc_set_prefix NAME FOLDER)
-  set(MC_${NAME}_LIBRARY_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/lib/${FOLDER})
+  set(MC_${NAME}_LIBRARY_INSTALL_PREFIX ${CMAKE_INSTALL_FULL_LIBDIR}/${FOLDER})
   if(WIN32)
-    set(MC_${NAME}_RUNTIME_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/bin/${FOLDER})
-    set(MC_${NAME}_RUNTIME_DESTINATION_PREFIX ${MC_RTC_INSTALL_PREFIX}/bin/${FOLDER})
+    set(MC_${NAME}_RUNTIME_INSTALL_PREFIX ${CMAKE_INSTALL_FULL_BINDIR}/${FOLDER})
+    set(MC_${NAME}_RUNTIME_DESTINATION_PREFIX ${MC_RTC_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/${FOLDER})
   else()
-    set(MC_${NAME}_RUNTIME_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/lib/${FOLDER})
-    set(MC_${NAME}_RUNTIME_DESTINATION_PREFIX ${MC_RTC_INSTALL_PREFIX}/lib/${FOLDER})
+    set(MC_${NAME}_RUNTIME_INSTALL_PREFIX ${CMAKE_INSTALL_FULL_LIBDIR}/${FOLDER})
+    set(MC_${NAME}_RUNTIME_DESTINATION_PREFIX ${MC_RTC_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/${FOLDER})
   endif()
   # For backward compatibility
   set(MC_${NAME}_INSTALL_PREFIX "${MC_${NAME}_LIBRARY_INSTALL_PREFIX}")
@@ -149,6 +171,9 @@ mc_rtc_set_prefix(PLUGINS mc_plugins)
 mc_rtc_set_prefix(ROBOTS mc_robots)
 mc_rtc_set_prefix(OBSERVERS mc_observers)
 mc_rtc_set_prefix(CONTROLLER mc_controller)
+
+set(MC_RTC_BINDIR "${CMAKE_INSTALL_FULL_BINDIR}")
+set(MC_RTC_LIBDIR "${CMAKE_INSTALL_FULL_LIBDIR}")
 
 configure_file(${PROJECT_SOURCE_DIR}/include/mc_rtc/config.h.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/include/mc_rtc/config.h)
 
@@ -176,9 +201,6 @@ if(${PYTHON_BINDING})
  add_subdirectory(binding/python)
 endif()
 
-set(MC_RTC_BINDIR "${CMAKE_INSTALL_PREFIX}/bin")
-set(MC_RTC_LIBDIR "${CMAKE_INSTALL_PREFIX}/lib")
-
 add_subdirectory(robots)
 add_subdirectory(observers)
 add_subdirectory(controllers)
@@ -200,7 +222,9 @@ install(
 )
 
 # Extra macros for mc_rtc
-install(FILES "src/mc_rtcMacros.cmake"
+file(RELATIVE_PATH mc_rtc_macros_RELATIVE_PATH "${CMAKE_INSTALL_PREFIX}/${CONFIG_INSTALL_DIR}" "${CMAKE_INSTALL_PREFIX}")
+configure_file(src/mc_rtcMacros.in.cmake "${CMAKE_CURRENT_BINARY_DIR}/src/mc_rtcMacros.cmake" @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/src/mc_rtcMacros.cmake"
         DESTINATION "${CONFIG_INSTALL_DIR}")
 set(PACKAGE_EXTRA_MACROS "${PACKAGE_EXTRA_MACROS}
 include(\"\${CMAKE_CURRENT_LIST_DIR}/mc_rtcMacros.cmake\")")

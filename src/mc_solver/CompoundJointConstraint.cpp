@@ -34,17 +34,17 @@ void CompoundJointConstraint::addConstraint(const mc_rbdyn::Robots & robots,
   const auto & robot = robots.robot(rIndex);
   if(rIndex != rIndex_)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("You must create one CompoundJointConstraint per robot");
+    mc_rtc::log::error_and_throw("You must create one CompoundJointConstraint per robot");
   }
   auto check_joint = [&](const std::string & jname) {
     if(!robot.hasJoint(jname))
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("No joint named {} in {}", jname, robot.name());
+      mc_rtc::log::error_and_throw("No joint named {} in {}", jname, robot.name());
     }
     auto qIdx = robot.jointIndexByName(jname);
     if(robot.mb().joint(static_cast<int>(qIdx)).dof() != 1)
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("Joint {} does not have exactly one dof", jname);
+      mc_rtc::log::error_and_throw("Joint {} does not have exactly one dof", jname);
     }
     return qIdx;
   };
@@ -96,7 +96,15 @@ std::string CompoundJointConstraint::descInEq(const std::vector<rbd::MultiBody> 
 } // namespace details
 
 CompoundJointConstraint::CompoundJointConstraint(const mc_rbdyn::Robots & robots, unsigned int rIndex, double dt)
-: constr_(robots, rIndex, dt, robots.robot(rIndex).module().compoundJoints())
+: CompoundJointConstraint(robots, rIndex, dt, robots.robot(rIndex).module().compoundJoints())
+{
+}
+
+CompoundJointConstraint::CompoundJointConstraint(const mc_rbdyn::Robots & robots,
+                                                 unsigned int rIndex,
+                                                 double dt,
+                                                 const CompoundJointConstraintDescriptionVector & cs)
+: constr_(robots, rIndex, dt, cs)
 {
 }
 
@@ -119,7 +127,15 @@ namespace
 static auto registered = mc_solver::ConstraintSetLoader::register_load_function(
     "compoundJoint",
     [](mc_solver::QPSolver & solver, const mc_rtc::Configuration & config) {
-      return std::make_shared<mc_solver::CompoundJointConstraint>(
-          solver.robots(), robotIndexFromConfig(config, solver.robots(), "compoundJoint"), solver.dt());
+      auto rIndex = robotIndexFromConfig(config, solver.robots(), "compoundJoint");
+      if(config.has("constraints"))
+      {
+        return std::make_shared<mc_solver::CompoundJointConstraint>(solver.robots(), rIndex, solver.dt(),
+                                                                    config("constraints"));
+      }
+      else
+      {
+        return std::make_shared<mc_solver::CompoundJointConstraint>(solver.robots(), rIndex, solver.dt());
+      }
     });
 }

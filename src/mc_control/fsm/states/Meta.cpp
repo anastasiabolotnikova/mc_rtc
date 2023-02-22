@@ -11,11 +11,6 @@ namespace mc_control
 namespace fsm
 {
 
-void MetaState::configure(const mc_rtc::Configuration & config)
-{
-  config_.load(config);
-}
-
 void MetaState::start(Controller & ctl)
 {
   if(!config_.has("StepByStep"))
@@ -23,6 +18,7 @@ void MetaState::start(Controller & ctl)
     config_.add("StepByStep", false);
   }
   executor_.init(ctl, config_, name(), config_("category", std::vector<std::string>{}));
+  run(ctl);
 }
 
 bool MetaState::run(Controller & ctl)
@@ -73,6 +69,16 @@ bool MetaState::read_msg(std::string & msg)
     }
   }
   return false;
+}
+
+std::vector<std::vector<std::string>> MetaState::transitions() const
+{
+  return config_("transitions");
+}
+
+std::map<std::string, mc_rtc::Configuration> MetaState::configs() const
+{
+  return config_("configs", mc_rtc::Configuration{});
 }
 
 } // namespace fsm

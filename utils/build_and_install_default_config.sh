@@ -1,6 +1,6 @@
 #default settings
 export SOURCE_DIR=`cd $(dirname $0)/../../; pwd`
-export BUILD_SUBDIR=build
+export BUILD_SUBDIR="build"
 export INSTALL_PREFIX="/usr/local"
 export WITH_ROS_SUPPORT="true"
 export WITH_PYTHON_SUPPORT="true"
@@ -14,6 +14,7 @@ export WITH_HRP4="false"
 export WITH_HRP4J="false"
 export WITH_HRP4CR="false"
 export WITH_HRP5="false"
+export WITH_PANDA="false"
 export WITH_MC_OPENRTM="false"
 export MC_OPENRTM_INSTALL_PREFIX="$INSTALL_PREFIX"
 export WITH_MC_UDP="false"

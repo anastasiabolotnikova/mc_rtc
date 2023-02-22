@@ -240,7 +240,7 @@ void fromMessagePack(mc_rtc::Configuration config, const std::string & key, mpac
       fromMessagePackMap(config.add(key), node);
       break;
     default:
-      log::error_and_throw<std::runtime_error>("Unsupported type in MessagePack");
+      log::error_and_throw("Unsupported type in MessagePack");
   }
 }
 
@@ -279,7 +279,7 @@ void fromMessagePack(mc_rtc::Configuration config, mpack_node_t node)
       fromMessagePackMap(config.object(), node);
       break;
     default:
-      log::error_and_throw<std::runtime_error>("Unsupported type in MessagePack");
+      log::error_and_throw("Unsupported type in MessagePack");
   }
 }
 
@@ -385,6 +385,18 @@ inline RapidJSONValue toJSON(const Eigen::Vector3d & value, RapidJSONDocument::A
   ret.PushBack(value(0), allocator);
   ret.PushBack(value(1), allocator);
   ret.PushBack(value(2), allocator);
+  return ret;
+}
+
+template<>
+inline RapidJSONValue toJSON(const Eigen::Vector4d & value, RapidJSONDocument::AllocatorType & allocator)
+{
+  RapidJSONValue ret(rapidjson::kArrayType);
+  ret.Reserve(4, allocator);
+  ret.PushBack(value(0), allocator);
+  ret.PushBack(value(1), allocator);
+  ret.PushBack(value(2), allocator);
+  ret.PushBack(value(3), allocator);
   return ret;
 }
 

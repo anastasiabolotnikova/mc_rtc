@@ -42,18 +42,19 @@ struct SplineTrajectoryTask : public TrajectoryTaskGeneric<tasks::qp::TransformT
 
   /*! \brief Constructor
    *
-   * \param robots Robots controlled by the task
-   * \param robotIndex Which robot is controlled
-   * \param surfaceName Surface controlled by the task (should belong to the controlled robot)
-   * \param duration Length of the movement
-   * \param stiffness Task stiffness (position and orientation)
-   * \param posW Task weight (position)
-   * \param oriW Task weight (orientation)
+   * \param frame Control frame
+   *
+   * \param duration Length of the motion
+   *
+   * \param stiffness Task stiffness
+   *
+   * \param weight Task weight
+   *
+   * \param target Target orientation
+   *
    * \param oriWp Optional orientation waypoints (pairs of [time, orientation])
    */
-  SplineTrajectoryTask(const mc_rbdyn::Robots & robots,
-                       unsigned int robotIndex,
-                       const std::string & surfaceName,
+  SplineTrajectoryTask(const mc_rbdyn::RobotFrame & frame,
                        double duration,
                        double stiffness,
                        double weight,
@@ -280,12 +281,6 @@ struct SplineTrajectoryTask : public TrajectoryTaskGeneric<tasks::qp::TransformT
    */
   const sva::PTransformd target() const;
 
-  /*! \brief Get the control points of the trajectory's b-spline
-   *
-   * \returns The list of control points in the spline
-   */
-  std::vector<Eigen::Vector3d> controlPoints();
-
   /*! \brief Number of points to sample on the spline for the gui display
    *
    * \param s number of samples
@@ -372,8 +367,7 @@ protected:
   void interpolateGains();
 
 protected:
-  unsigned int rIndex_ = 0;
-  std::string surfaceName_;
+  mc_rbdyn::ConstRobotFramePtr frame_;
   double duration_ = 0;
   mc_trajectory::InterpolatedRotation oriSpline_;
   // Linear interpolation for gains

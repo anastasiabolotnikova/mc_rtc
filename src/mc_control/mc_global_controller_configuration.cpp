@@ -39,7 +39,7 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
   }
   if(bfs::exists(config_path))
   {
-    mc_rtc::log::info("Loading additional global configuration {}", config_path);
+    mc_rtc::log::info("Loading additional global configuration {}", config_path.string());
     config.load(config_path.string());
   }
   // Load extra configuration
@@ -53,7 +53,6 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
   //  General options  //
   ///////////////////////
   config("VerboseLoader", verbose_loader);
-  config("UseSandbox", use_sandbox);
   config("Timestep", timestep);
 
   //////////////
@@ -61,7 +60,6 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
   //////////////
   mc_rbdyn::RobotLoader::set_verbosity(verbose_loader);
   config("RobotModulePaths", robot_module_paths);
-  mc_rbdyn::RobotLoader::enable_sandboxing(use_sandbox);
   if(config("ClearRobotModulePath", false))
   {
     mc_rbdyn::RobotLoader::clear();
@@ -74,7 +72,7 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
     }
     catch(const mc_rtc::LoaderException & exc)
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("Failed to update robot module path(s)");
+      mc_rtc::log::error_and_throw("Failed to update robot module path(s)");
     }
   }
   if(rm)
@@ -94,13 +92,12 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
         }
         catch(const mc_rtc::LoaderException & exc)
         {
-          mc_rtc::log::error_and_throw<std::runtime_error>("Failed to create {} to use as a main robot", robot_name);
+          mc_rtc::log::error_and_throw("Failed to create {} to use as a main robot", robot_name);
         }
       }
       else
       {
-        mc_rtc::log::error_and_throw<std::runtime_error>(
-            "Trying to use {} as main robot but this robot cannot be loaded", robot_name);
+        mc_rtc::log::error_and_throw("Trying to use {} as main robot but this robot cannot be loaded", robot_name);
       }
     }
     else
@@ -129,14 +126,12 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
         }
         catch(const mc_rtc::LoaderException &)
         {
-          mc_rtc::log::error_and_throw<std::runtime_error>("Failed to create main robot using parameters {}",
-                                                           config("MainRobot").dump());
+          mc_rtc::log::error_and_throw("Failed to create main robot using parameters {}", config("MainRobot").dump());
         }
       }
       else
       {
-        mc_rtc::log::error_and_throw<std::runtime_error>(
-            "Trying to use {} as main robot but this robot cannot be loaded", params[0]);
+        mc_rtc::log::error_and_throw("Trying to use {} as main robot but this robot cannot be loaded", params[0]);
       }
     }
   }
@@ -149,7 +144,6 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
   /////////////////
   //  Observers  //
   /////////////////
-  mc_observers::ObserverLoader::enable_sandboxing(use_sandbox);
   mc_observers::ObserverLoader::set_verbosity(verbose_loader);
   config("ObserverModulePaths", observer_module_paths);
   if(config("ClearObserverModulePath", false))
@@ -164,7 +158,7 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
     }
     catch(const mc_rtc::LoaderException & exc)
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("Failed to update observer module path(s)");
+      mc_rtc::log::error_and_throw("Failed to update observer module path(s)");
     }
   }
 
@@ -236,8 +230,7 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
   }
   else
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>(
-        "Enabled entry in mc_rtc must contain at least one controller name");
+    mc_rtc::log::error_and_throw("Enabled entry in mc_rtc must contain at least one controller name");
   }
   config("Default", initial_controller);
   config("IncludeHalfSitController", include_halfsit_controller);
@@ -252,7 +245,6 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
   //  Logging  //
   ///////////////
   config("Log", enable_log);
-  config("LogReal", log_real);
   {
     std::string log_policy_str = "non-threaded";
     config("LogPolicy", log_policy_str);
@@ -402,14 +394,14 @@ inline void load_config(const std::string & desc,
     bfs::path global = conf_or_yaml(bfs::path(p) / search_path_suffix / (name + ".conf"));
     if(bfs::exists(global))
     {
-      mc_rtc::log::info("Loading additional {} configuration: {}", desc, global);
+      mc_rtc::log::info("Loading additional {} configuration: {}", desc, global.string());
       c.load(global.string());
     }
   }
   bfs::path local = conf_or_yaml(user_path / (name + ".conf"));
   if(bfs::exists(local))
   {
-    mc_rtc::log::info("Loading additional {} configuration: {}", desc, local);
+    mc_rtc::log::info("Loading additional {} configuration: {}", desc, local.string());
     c.load(local.string());
   }
   configs[name] = c;

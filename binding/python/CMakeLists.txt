@@ -16,8 +16,10 @@ set(BINDINGS_LIBRARIES
   mc_control_client
 )
 if(WIN32)
-  list(APPEND BINDINGS_LIBRARIES ltdl RBDyn::RBDyn Tasks::Tasks spdlog::spdlog)
+  list(APPEND BINDINGS_LIBRARIES ltdl RBDyn::RBDyn RBDyn::Parsers Tasks::Tasks spdlog::spdlog)
 endif()
+
+set(PYTHON_BINDING_USE_PYTEST ON CACHE BOOL "" FORCE)
 
 add_cython_bindings(mc_rtc
   TARGETS ${BINDINGS_LIBRARIES}

@@ -135,8 +135,7 @@ void CollisionsConstraint::__addCollision(const mc_solver::QPSolver & solver, co
     }
     if(!match)
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("No match found for collision wildcard {} in {}", body,
-                                                       robot.name());
+      mc_rtc::log::error_and_throw("No match found for collision wildcard {} in {}", body, robot.name());
     }
     return true;
   };
@@ -154,17 +153,36 @@ void CollisionsConstraint::__addCollision(const mc_solver::QPSolver & solver, co
     return;
   }
   cols.push_back(col);
+  auto jointsToSelector = [](const mc_rbdyn::Robot & robot,
+                             const std::vector<std::string> & joints) -> Eigen::VectorXd {
+    if(joints.size() == 0)
+    {
+      return Eigen::VectorXd::Zero(0);
+    }
+    Eigen::VectorXd ret = Eigen::VectorXd::Zero(robot.mb().nrDof());
+    for(const auto & j : joints)
+    {
+      auto mbcIndex = robot.jointIndexByName(j);
+      auto dofIndex = robot.mb().jointPosInDof(static_cast<int>(mbcIndex));
+      const auto & joint = robot.mb().joint(static_cast<int>(mbcIndex));
+      ret.segment(dofIndex, joint.dof()).setOnes();
+    }
+    return ret;
+  };
+  auto r1Selector = jointsToSelector(robots.robot(r1Index), col.r1Joints);
+  auto r2Selector =
+      r1Index == r2Index ? Eigen::VectorXd::Zero(0).eval() : jointsToSelector(robots.robot(r2Index), col.r2Joints);
   if(r1.mb().nrDof() == 0)
   {
     collConstr->addCollision(robots.mbs(), collId, static_cast<int>(r2Index), body2.first, body2.second.get(), X_b2_c,
                              static_cast<int>(r1Index), body1.first, body1.second.get(), X_b1_c, col.iDist, col.sDist,
-                             col.damping, defaultDampingOffset);
+                             col.damping, defaultDampingOffset, r2Selector, r1Selector);
   }
   else
   {
     collConstr->addCollision(robots.mbs(), collId, static_cast<int>(r1Index), body1.first, body1.second.get(), X_b1_c,
                              static_cast<int>(r2Index), body2.first, body2.second.get(), X_b2_c, col.iDist, col.sDist,
-                             col.damping, defaultDampingOffset);
+                             col.damping, defaultDampingOffset, r1Selector, r2Selector);
   }
   if(solver.gui())
   {
@@ -201,8 +219,7 @@ void CollisionsConstraint::toggleCollisionMonitor(int collId)
         return c.second.second;
       }
     }
-    mc_rtc::log::error_and_throw<std::runtime_error>(
-        "[CollisionConstraint] Attempted to toggleCollisionMonitor on non-existent collision");
+    mc_rtc::log::error_and_throw("[CollisionConstraint] Attempted to toggleCollisionMonitor on non-existent collision");
   };
   const auto & col = findCollisionById();
   auto & gui = *gui_;

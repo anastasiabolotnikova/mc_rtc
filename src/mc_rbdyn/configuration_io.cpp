@@ -83,7 +83,7 @@ rbd::Joint::Type ConfigurationLoader<rbd::Joint::Type>::load(const mc_rtc::Confi
   {
     return rbd::Joint::Type::Fixed;
   }
-  mc_rtc::log::error_and_throw<std::runtime_error>("{} was stored as joint type, cannot comprehend that", type);
+  mc_rtc::log::error_and_throw("{} was stored as joint type, cannot comprehend that", type);
 }
 
 mc_rtc::Configuration ConfigurationLoader<rbd::Joint::Type>::save(const rbd::Joint::Type & type)
@@ -114,7 +114,7 @@ mc_rtc::Configuration ConfigurationLoader<rbd::Joint::Type>::save(const rbd::Joi
       typeStr = "fixed";
       break;
     default:
-      mc_rtc::log::error_and_throw<std::runtime_error>("Cannot serialize joint type {}", type);
+      mc_rtc::log::error_and_throw("Cannot serialize joint type {}", type);
   }
   config.add("type", typeStr);
   return config;
@@ -149,10 +149,23 @@ mc_rtc::Configuration ConfigurationLoader<mc_rbdyn::BodySensor>::save(const mc_r
   return config;
 }
 
+mc_rbdyn::JointSensor ConfigurationLoader<mc_rbdyn::JointSensor>::load(const mc_rtc::Configuration & config)
+{
+  return mc_rbdyn::JointSensor(static_cast<std::string>(config("joint")));
+}
+
+mc_rtc::Configuration ConfigurationLoader<mc_rbdyn::JointSensor>::save(const mc_rbdyn::JointSensor & js)
+{
+  mc_rtc::Configuration config;
+  config.add("joint", js.joint());
+  return config;
+}
+
 mc_rbdyn::Collision ConfigurationLoader<mc_rbdyn::Collision>::load(const mc_rtc::Configuration & config)
 {
   return mc_rbdyn::Collision(config("body1"), config("body2"), config("iDist", 0.05), config("sDist", 0.01),
-                             config("damping", 0.0));
+                             config("damping", 0.0), config("r1Joints", std::vector<std::string>{}),
+                             config("r2Joints", std::vector<std::string>{}));
 }
 
 mc_rtc::Configuration ConfigurationLoader<mc_rbdyn::Collision>::save(const mc_rbdyn::Collision & c)
@@ -163,6 +176,8 @@ mc_rtc::Configuration ConfigurationLoader<mc_rbdyn::Collision>::save(const mc_rb
   config.add("iDist", c.iDist);
   config.add("sDist", c.sDist);
   config.add("damping", c.damping);
+  config.add("r1Joints", c.r1Joints);
+  config.add("r2Joints", c.r2Joints);
   return config;
 }
 
@@ -186,7 +201,7 @@ std::shared_ptr<mc_rbdyn::Surface> ConfigurationLoader<std::shared_ptr<mc_rbdyn:
                                                       config("materialName"), config("pointsFromOrigin"),
                                                       config("X_b_motor"), config("motorMaxTorque"));
   }
-  mc_rtc::log::error_and_throw<std::runtime_error>("Unknown surface type stored {}", type);
+  mc_rtc::log::error_and_throw("Unknown surface type stored {}", type);
 }
 
 mc_rtc::Configuration ConfigurationLoader<std::shared_ptr<mc_rbdyn::Surface>>::save(
@@ -218,7 +233,7 @@ mc_rtc::Configuration ConfigurationLoader<std::shared_ptr<mc_rbdyn::Surface>>::s
   }
   else
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("Cannot serialize a surface of type {}", s->type());
+    mc_rtc::log::error_and_throw("Cannot serialize a surface of type {}", s->type());
   }
   return config;
 }
@@ -229,7 +244,7 @@ std::shared_ptr<mc_rbdyn::PlanarSurface> ConfigurationLoader<std::shared_ptr<mc_
   std::string type = config("type");
   if(type != "planar")
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("Tried to deserialize a non-planar surface into a planar surface");
+    mc_rtc::log::error_and_throw("Tried to deserialize a non-planar surface into a planar surface");
   }
   return std::static_pointer_cast<mc_rbdyn::PlanarSurface>(
       ConfigurationLoader<std::shared_ptr<mc_rbdyn::Surface>>::load(config));
@@ -247,8 +262,7 @@ std::shared_ptr<mc_rbdyn::CylindricalSurface> ConfigurationLoader<std::shared_pt
   std::string type = config("type");
   if(type != "cylindrical")
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>(
-        "Tried to deserialize a non-cylindrical surface into a cylindrical surface");
+    mc_rtc::log::error_and_throw("Tried to deserialize a non-cylindrical surface into a cylindrical surface");
   }
   return std::static_pointer_cast<mc_rbdyn::CylindricalSurface>(
       ConfigurationLoader<std::shared_ptr<mc_rbdyn::Surface>>::load(config));
@@ -266,8 +280,7 @@ std::shared_ptr<mc_rbdyn::GripperSurface> ConfigurationLoader<std::shared_ptr<mc
   std::string type = config("type");
   if(type != "gripper")
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>(
-        "Tried to deserialize a non-gripper surface into a gripper surface");
+    mc_rtc::log::error_and_throw("Tried to deserialize a non-gripper surface into a gripper surface");
   }
   return std::static_pointer_cast<mc_rbdyn::GripperSurface>(
       ConfigurationLoader<std::shared_ptr<mc_rbdyn::Surface>>::load(config));
@@ -599,6 +612,23 @@ mc_rtc::Configuration ConfigurationLoader<mc_rbdyn::RobotModule::Gripper::Safety
   return safety.save();
 }
 
+mc_rbdyn::RobotModule::FrameDescription ConfigurationLoader<mc_rbdyn::RobotModule::FrameDescription>::load(
+    const mc_rtc::Configuration & config)
+{
+  return {config("name"), config("parent"), config("X_p_f"), config("baked", false)};
+}
+
+mc_rtc::Configuration ConfigurationLoader<mc_rbdyn::RobotModule::FrameDescription>::save(
+    const mc_rbdyn::RobotModule::FrameDescription & frame)
+{
+  mc_rtc::Configuration config;
+  config.add("name", frame.name);
+  config.add("parent", frame.parent);
+  config.add("X_p_f", frame.X_p_f);
+  config.add("baked", frame.baked);
+  return config;
+}
+
 rbd::parsers::Geometry::Box ConfigurationLoader<rbd::parsers::Geometry::Box>::load(const mc_rtc::Configuration & config)
 {
   rbd::parsers::Geometry::Box b;
@@ -888,7 +918,7 @@ mc_rbdyn::S_ObjectPtr ConfigurationLoader<mc_rbdyn::S_ObjectPtr>::load(const mc_
     return std::make_shared<sch::S_Superellipsoid>(config("a"), config("b"), config("c"), config("epsilon1"),
                                                    config("epsilon2"));
   }
-  mc_rtc::log::error_and_throw<std::runtime_error>("Unknown type {} in store S_Object", type);
+  mc_rtc::log::error_and_throw("Unknown type {} in store S_Object", type);
 }
 
 mc_rtc::Configuration ConfigurationLoader<mc_rbdyn::S_ObjectPtr>::save(const mc_rbdyn::S_ObjectPtr & object)
@@ -967,7 +997,7 @@ mc_rtc::Configuration ConfigurationLoader<mc_rbdyn::S_ObjectPtr>::save(const mc_
   else if(type == sch::S_Object::TPolyhedron || type == sch::S_Object::TSTP_BV
           || type == sch::S_Object::TSTP_BV_WithPolyhedron)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("Polyhedron and STP-BV objects cannot be saved this way");
+    mc_rtc::log::error_and_throw("Polyhedron and STP-BV objects cannot be saved this way");
   }
   else if(type == sch::S_Object::TSuperellipsoid)
   {
@@ -987,22 +1017,30 @@ mc_rtc::Configuration ConfigurationLoader<mc_rbdyn::S_ObjectPtr>::save(const mc_
   }
   else
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("New sch-core object type is not handled by this save function");
+    mc_rtc::log::error_and_throw("New sch-core object type is not handled by this save function");
   }
   return out;
 failed_cast:
-  mc_rtc::log::error_and_throw<std::runtime_error>("Failed to cast the object to its deduced type");
+  mc_rtc::log::error_and_throw("Failed to cast the object to its deduced type");
 }
 
 mc_rbdyn::RobotModule ConfigurationLoader<mc_rbdyn::RobotModule>::load(const mc_rtc::Configuration & config)
 {
   bfs::path path((std::string)config("path"));
-  bfs::path urdf_path((std::string)config("urdf_path"));
-  if(!urdf_path.is_absolute())
-  {
-    urdf_path = path / urdf_path;
-  }
-  mc_rbdyn::RobotModule rm(path.string(), config("name"), urdf_path.string());
+  std::string name = config("name");
+  bfs::path urdf_path = [&]() {
+    if(config.has("urdf_path"))
+    {
+      bfs::path out(static_cast<std::string>(config("urdf_path")));
+      if(!out.is_absolute())
+      {
+        return path / out;
+      }
+      return out;
+    }
+    return path / "urdf" / fmt::format("{}.urdf", name);
+  }();
+  mc_rbdyn::RobotModule rm(path.string(), name, urdf_path.string());
   if(config.has("mb"))
   {
     rm.mb = config("mb");
@@ -1017,7 +1055,7 @@ mc_rbdyn::RobotModule ConfigurationLoader<mc_rbdyn::RobotModule>::load(const mc_
     auto fixed = config("fixed", false);
     if(!bfs::exists(rm.urdf_path))
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("Could not open model for {} at {}", rm.name, rm.urdf_path);
+      mc_rtc::log::error_and_throw("Could not open model for {} at {}", rm.name, rm.urdf_path);
     }
     rm.init(rbd::parsers::from_urdf_file(rm.urdf_path, fixed));
     auto ctfs = config("collisionTransforms", std::map<std::string, sva::PTransformd>{});
@@ -1038,7 +1076,7 @@ mc_rbdyn::RobotModule ConfigurationLoader<mc_rbdyn::RobotModule>::load(const mc_
     mc_rbdyn::RobotModule::bounds_t aBounds = config("accelerationBounds");
     if(aBounds.size() != 2)
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("accelerationBounds entry should be an array of size 2");
+      mc_rtc::log::error_and_throw("accelerationBounds entry should be an array of size 2");
     }
     rm._accelerationBounds.resize(2);
     rm._accelerationBounds[0] = aBounds[0];
@@ -1049,7 +1087,7 @@ mc_rbdyn::RobotModule ConfigurationLoader<mc_rbdyn::RobotModule>::load(const mc_
     mc_rbdyn::RobotModule::bounds_t jBounds = config("jerkBounds");
     if(jBounds.size() != 2)
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("jerkBounds entry should be an array of size 2");
+      mc_rtc::log::error_and_throw("jerkBounds entry should be an array of size 2");
     }
     rm._jerkBounds.resize(2);
     rm._jerkBounds[0] = jBounds[0];
@@ -1060,7 +1098,7 @@ mc_rbdyn::RobotModule ConfigurationLoader<mc_rbdyn::RobotModule>::load(const mc_
     mc_rbdyn::RobotModule::bounds_t tdBounds = config("torqueDerivativeBounds");
     if(tdBounds.size() != 2)
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("torqueDerivativeBounds entry should be an array of size 2");
+      mc_rtc::log::error_and_throw("torqueDerivativeBounds entry should be an array of size 2");
     }
     rm._torqueDerivativeBounds.resize(2);
     rm._torqueDerivativeBounds[0] = tdBounds[0];
@@ -1098,6 +1136,7 @@ mc_rbdyn::RobotModule ConfigurationLoader<mc_rbdyn::RobotModule>::load(const mc_
   config("flexibilities", rm._flexibility);
   config("forceSensors", rm._forceSensors);
   config("bodySensors", rm._bodySensors);
+  config("jointSensors", rm._jointSensors);
   config("springs", rm._springs);
   config("minimalSelfCollisions", rm._minimalSelfCollisions);
   config("commonSelfCollisions", rm._commonSelfCollisions);
@@ -1132,6 +1171,10 @@ mc_rbdyn::RobotModule ConfigurationLoader<mc_rbdyn::RobotModule>::load(const mc_
     rm._lipmStabilizerConfig.load(config("lipmStabilizer"));
   }
 
+  rm._frames = config("frames", std::vector<mc_rbdyn::RobotModule::FrameDescription>{});
+
+  rm._compoundJoints = config("compoundJoints", mc_rbdyn::CompoundJointConstraintDescriptionVector{});
+
   return rm;
 }
 
@@ -1158,25 +1201,24 @@ mc_rtc::Configuration ConfigurationLoader<mc_rbdyn::RobotModule>::save(const mc_
     config.add("filteredLinks", filteredLinks);
     config.add("fixed", fixed);
   }
+  config.add("frames", rm._frames);
   if(rm._bounds.size() != 6)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("Wrong number ({}) of _bounds entries in RobotModule",
-                                                     rm._bounds.size());
+    mc_rtc::log::error_and_throw("Wrong number ({}) of _bounds entries in RobotModule", rm._bounds.size());
   }
   if(rm._accelerationBounds.size() != 0 && rm._accelerationBounds.size() != 2)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("Wrong number ({}) of _accelerationBounds entries in RobotModule",
-                                                     rm._accelerationBounds.size());
+    mc_rtc::log::error_and_throw("Wrong number ({}) of _accelerationBounds entries in RobotModule",
+                                 rm._accelerationBounds.size());
   }
   if(rm._jerkBounds.size() != 0 && rm._jerkBounds.size() != 2)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("Wrong number ({}) of _jerkBounds entries in RobotModule",
-                                                     rm._jerkBounds.size());
+    mc_rtc::log::error_and_throw("Wrong number ({}) of _jerkBounds entries in RobotModule", rm._jerkBounds.size());
   }
   if(rm._torqueDerivativeBounds.size() != 0 && rm._torqueDerivativeBounds.size() != 2)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>(
-        "Wrong number ({}) of _torqueDerivativeBounds entries in RobotModule", rm._torqueDerivativeBounds.size());
+    mc_rtc::log::error_and_throw("Wrong number ({}) of _torqueDerivativeBounds entries in RobotModule",
+                                 rm._torqueDerivativeBounds.size());
   }
   if(rm._accelerationBounds.size() == 2)
   {
@@ -1207,6 +1249,7 @@ mc_rtc::Configuration ConfigurationLoader<mc_rbdyn::RobotModule>::save(const mc_
   config.add("flexibilities", rm._flexibility);
   config.add("forceSensors", rm._forceSensors);
   config.add("bodySensors", rm._bodySensors);
+  config.add("jointSensors", rm._jointSensors);
   config.add("springs", rm._springs);
   config.add("minimalSelfCollisions", rm._minimalSelfCollisions);
   config.add("commonSelfCollisions", rm._commonSelfCollisions);
@@ -1215,6 +1258,10 @@ mc_rtc::Configuration ConfigurationLoader<mc_rbdyn::RobotModule>::save(const mc_
   config.add("default_attitude", rm._default_attitude);
   config.add("gripperSafety", rm._gripperSafety);
   config.add("lipmStabilizer", rm._lipmStabilizerConfig);
+  if(rm._compoundJoints.size())
+  {
+    config.add("compoundJoints", rm._compoundJoints);
+  }
   return config;
 }
 

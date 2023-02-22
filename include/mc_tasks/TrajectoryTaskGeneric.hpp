@@ -25,6 +25,12 @@ TrajectoryTaskGeneric<T>::TrajectoryTaskGeneric(const mc_rbdyn::Robots & robots,
 }
 
 template<typename T>
+TrajectoryTaskGeneric<T>::TrajectoryTaskGeneric(const mc_rbdyn::RobotFrame & frame, double stiffness, double weight)
+: TrajectoryTaskGeneric(frame.robot().robots(), frame.robot().robotIndex(), stiffness, weight)
+{
+}
+
+template<typename T>
 TrajectoryTaskGeneric<T>::~TrajectoryTaskGeneric()
 {
 }
@@ -215,7 +221,8 @@ void TrajectoryTaskGeneric<T>::selectActiveJoints(
   }
   selectorT_ = std::make_shared<tasks::qp::JointsSelector>(tasks::qp::JointsSelector::ActiveJoints(
       robots.mbs(), static_cast<int>(rIndex), errorT.get(), activeJointsName, activeDofs));
-  trajectoryT_ = std::make_shared<tasks::qp::TrajectoryTask>(robots.mbs(), rIndex, selectorT_.get(), 1, 2, weight_);
+  trajectoryT_ = std::make_shared<tasks::qp::TrajectoryTask>(robots.mbs(), rIndex, selectorT_.get(), 1, 2,
+                                                             trajectoryT_->dimWeight(), weight_);
   trajectoryT_->setGains(stiffness_, damping_);
 }
 
@@ -258,7 +265,8 @@ void TrajectoryTaskGeneric<T>::selectUnactiveJoints(
   }
   selectorT_ = std::make_shared<tasks::qp::JointsSelector>(tasks::qp::JointsSelector::UnactiveJoints(
       robots.mbs(), static_cast<int>(rIndex), errorT.get(), unactiveJointsName, unactiveDofs));
-  trajectoryT_ = std::make_shared<tasks::qp::TrajectoryTask>(robots.mbs(), rIndex, selectorT_.get(), 1, 2, weight_);
+  trajectoryT_ = std::make_shared<tasks::qp::TrajectoryTask>(robots.mbs(), rIndex, selectorT_.get(), 1, 2,
+                                                             trajectoryT_->dimWeight(), weight_);
   trajectoryT_->setGains(stiffness_, damping_);
 }
 
@@ -292,7 +300,8 @@ void TrajectoryTaskGeneric<T>::resetJointsSelector()
     return;
   }
   selectorT_ = nullptr;
-  trajectoryT_ = std::make_shared<tasks::qp::TrajectoryTask>(robots.mbs(), rIndex, errorT.get(), 1, 2, weight_);
+  trajectoryT_ = std::make_shared<tasks::qp::TrajectoryTask>(robots.mbs(), rIndex, errorT.get(), 1, 2,
+                                                             trajectoryT_->dimWeight(), weight_);
   trajectoryT_->setGains(stiffness_, damping_);
 }
 

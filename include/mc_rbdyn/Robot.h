@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <mc_rbdyn/Base.h>
+#include <mc_rbdyn/RobotFrame.h>
 #include <mc_rbdyn/RobotModule.h>
 #include <mc_rbdyn/Surface.h>
 
@@ -109,11 +109,96 @@ public:
   /** @} */
   /* End of Body sensors group */
 
+  /** Return true if the specified joint has a joint sensor attached to it
+   *
+   * @param joint Joint to query
+   *
+   */
+  bool jointHasJointSensor(const std::string & joint) const;
+
+  /** Return a specific JointSensor by joint name
+   *
+   * @param joint Name of the joint
+   *
+   * @throws If there is no sensor attached to the joint
+   *
+   */
+  JointSensor & jointJointSensor(const std::string & joint);
+
+  /** Return a specific JointSensor by joint name (const) */
+  const JointSensor & jointJointSensor(const std::string & joint) const;
+
+  /** Return all joint sensors */
+  std::vector<JointSensor> & jointSensors();
+
+  /** Return all joint sensors (const) */
+  const std::vector<JointSensor> & jointSensors() const;
+
+  /** @} */
+  /* End of Joint sensors group */
+
   /** Returns true if the robot has a joint named \p name */
   bool hasJoint(const std::string & name) const;
 
   /** Returns true if the robot has a body named \p name */
   bool hasBody(const std::string & name) const;
+
+  /** Returns true if the robot has a frame named \p name */
+  inline bool hasFrame(const std::string & name) const noexcept
+  {
+    return frames_.count(name) != 0;
+  }
+
+  /** Access the frame named \p name
+   *
+   * \throws If the frame does not exist
+   */
+  inline const RobotFrame & frame(const std::string & name) const
+  {
+    auto it = frames_.find(name);
+    if(it != frames_.end())
+    {
+      return *it->second;
+    }
+    mc_rtc::log::error_and_throw("No frame named {} in {}", name, name_);
+  }
+
+  /** Access the frame named \p name (non-const)
+   *
+   * \throws If the frame does not exist
+   */
+  inline RobotFrame & frame(const std::string & name)
+  {
+    return const_cast<RobotFrame &>(static_cast<const Robot *>(this)->frame(name));
+  }
+
+  /** Returns the list of available frames in this robot */
+  std::vector<std::string> frames() const;
+
+  /** Create a new frame attached to this robot
+   *
+   * \param name Name of the frame
+   *
+   * \param frame Parent frame of this frame
+   *
+   * \param X_p_f Transformation from the parent frame to the frame
+   *
+   * \param baked Attach the newly created frame to \p parent parent's body rather than \p parent if true
+   *
+   * \returns The newly created frame
+   *
+   * \throws If \p parent does not belong to this robot or if \p name already exists in this robot
+   */
+  RobotFrame & makeFrame(const std::string & name, RobotFrame & parent, sva::PTransformd X_p_f, bool baked = false);
+
+  /**
+   * Create new frames attached to this robot
+   *
+   * \param frames Description of the frames
+   *
+   * \throws If any of the frames' \p parent does not belong to this robot or if \p name already exists in this robot
+   */
+  void makeFrames(std::vector<mc_rbdyn::RobotModule::FrameDescription> frames);
 
   /** Returns the joint index of joint named \name
    *
@@ -258,32 +343,31 @@ public:
    */
   sva::ForceVecd bodyWrench(const std::string & bodyName) const;
 
-  /** Compute the cop in surface frame computed from gravity-free force
-   * measurements
+  /** Compute the cop in a given frame computed from gravity-free force measurements
    *
-   * @param surfaceName A surface attached to a force sensor
+   * @param frame A frame attached to a force sensor
    * @param min_pressure Minimum pressure in N (default 0.5N).
    *
-   * @return Measured cop in surface frame
+   * @return Measured cop in provided frame
    *  - CoP if pressure >= min_pressure
    *  - Zero otherwise
    *
-   * @throws If no sensor is attached to this surface
+   * @throws If the frame does not exist or no sensor is attached to this frame
    */
-  Eigen::Vector2d cop(const std::string & surfaceName, double min_pressure = 0.5) const;
-  /** Compute the cop in inertial frame compute from gravity-free force
-   * measurements
+  Eigen::Vector2d cop(const std::string & frame, double min_pressure = 0.5) const;
+
+  /** Compute the cop in inertial frame compute from gravity-free force measurements
    *
-   * @param surfaceName A surface attached to a force sensor
+   * @param frame A frame attached to a force sensor
    * @param min_pressure Minimum pressure in N (default 0.5N).
    *
    * @return Measured cop in inertial frame
    *  - CoP if pressure >= min_pressure
    *  - Zero otherwise
    *
-   * @throws If no sensor is attached to this surface
+   * @throws If the frame does not exist or no sensor is attached to this frame
    */
-  Eigen::Vector3d copW(const std::string & surfaceName, double min_pressure = 0.5) const;
+  Eigen::Vector3d copW(const std::string & frame, double min_pressure = 0.5) const;
 
   /**
    * @brief Computes net total wrench from a list of sensors
@@ -320,6 +404,27 @@ public:
                       double minimalNetNormalForce = 1.) const;
 
   /**
+   * @brief Actual ZMP computation from net total wrench and the ZMP plane
+   *
+   * @param zmpOut Output of the ZMP computation expressed in the requested frame
+   * @param netTotalWrench Total wrench for all links in contact
+   * @param plane_p Arbitrary point on the ZMP plane
+   * @param plane_n Normal to the ZMP plane (normalized)
+   * @param minimalNetNormalForce[N] Mininal force above which the ZMP computation
+   * is considered valid. Must be >0 (prevents a divide by zero).
+   *
+   * @return True if the computation was successful, false otherwise and \p zmpOut is untouched
+   *
+   * \see bool mc_rbdyn::zmp(Eigen::Vector3d & zmpOut, const sva::ForceVecd & netTotalWrench, const Eigen::Vector3d &
+   * plane_p, const Eigen::Vector3d & plane_n, double minimalNetNormalForce)
+   */
+  bool zmp(Eigen::Vector3d & zmpOut,
+           const sva::ForceVecd & netTotalWrench,
+           const Eigen::Vector3d & plane_p,
+           const Eigen::Vector3d & plane_n,
+           double minimalNetNormalForce = 1.) const noexcept;
+
+  /**
    * @brief ZMP computation from net total wrench and a frame
    *
    * See \ref zmpDoc
@@ -338,6 +443,27 @@ public:
                       const sva::PTransformd & zmpFrame,
                       double minimalNetNormalForce = 1.) const;
 
+  /**
+   * @brief ZMP computation from net total wrench and a frame
+   *
+   * See \ref zmpDoc
+   *
+   * \see Eigen::Vector3d mc_rbdyn::zmp(Eigen::Vector3d & zmpOut, const sva::ForceVecd & netTotalWrench, const
+   * sva::PTransformd & zmpFrame, double minimalNetNormalForce)
+   *
+   * @param zmpOut Output of the ZMP computation expressed in the plane defined by the zmpFrame frame
+   * @param netTotalWrench
+   * @param zmpFrame Frame used for ZMP computation. The convention here is
+   * that the contact frame should have its z-axis pointing in the normal
+   * direction of the contact towards the robot.
+   *
+   * @return True if the computation was successful, false otherwise and \p zmpOut is untouched
+   */
+  bool zmp(Eigen::Vector3d & zmpOut,
+           const sva::ForceVecd & netTotalWrench,
+           const sva::PTransformd & zmpFrame,
+           double minimalNetNormalForce = 1.) const noexcept;
+
   /** Computes the ZMP from sensor names and a plane
    *
    * See \ref zmpDoc
@@ -349,6 +475,18 @@ public:
                       const Eigen::Vector3d & plane_n,
                       double minimalNetNormalForce = 1.) const;
 
+  /** Computes the ZMP from sensor names and a plane
+   *
+   * See \ref zmpDoc
+   *
+   * @param sensorNames Names of all sensors attached to a link in contact with the environment
+   */
+  bool zmp(Eigen::Vector3d & zmpOut,
+           const std::vector<std::string> & sensorNames,
+           const Eigen::Vector3d & plane_p,
+           const Eigen::Vector3d & plane_n,
+           double minimalNetNormalForce = 1.) const noexcept;
+
   /**
    * @brief Computes the ZMP from sensor names and a frame
    *
@@ -359,6 +497,18 @@ public:
   Eigen::Vector3d zmp(const std::vector<std::string> & sensorNames,
                       const sva::PTransformd & zmpFrame,
                       double minimalNetNormalForce = 1.) const;
+
+  /**
+   * @brief Computes the ZMP from sensor names and a frame
+   *
+   * See \ref zmpDoc
+   *
+   * @param sensorNames Names of all sensors attached to a link in contact with the environment
+   */
+  bool zmp(Eigen::Vector3d & zmpOut,
+           const std::vector<std::string> & sensorNames,
+           const sva::PTransformd & zmpFrame,
+           double minimalNetNormalForce = 1.) const noexcept;
 
   /** Access the robot's angular lower limits (const) */
   const std::vector<std::vector<double>> & ql() const;
@@ -560,6 +710,12 @@ public:
   /** Const variant */
   const ForceSensor & bodyForceSensor(const std::string & body) const;
 
+  /** Return a force sensor attached (directly or indirectly) to the given body
+   *
+   * Returns a null pointer if no such sensor exists
+   */
+  const ForceSensor * findBodyForceSensor(const std::string & body) const;
+
   /** Return a force sensor attached to the provided surface
    *
    * @param surface Name of the surface to which the sensor is attached
@@ -607,11 +763,11 @@ public:
   /** Const variant */
   const ForceSensor & indirectSurfaceForceSensor(const std::string & surface) const;
 
-  /** Returns all force sensors */
-  std::vector<ForceSensor> & forceSensors();
-
   /** Returns all force sensors (const) */
   const std::vector<ForceSensor> & forceSensors() const;
+
+  /** Returns all force sensors (const) */
+  std::vector<ForceSensor> & forceSensors();
 
   /** @} */
   /* End of Force sensors group */
@@ -797,6 +953,18 @@ public:
   /** Return the robot's default stance (e.g. half-sitting for humanoid) */
   std::map<std::string, std::vector<double>> stance() const;
 
+  /** Access Robots instance this instance belongs to */
+  inline mc_rbdyn::Robots & robots() noexcept
+  {
+    return *robots_;
+  }
+
+  /** Access Robots instance this instance belongs to (const) */
+  inline const mc_rbdyn::Robots & robots() const noexcept
+  {
+    return *robots_;
+  }
+
   /** Access the robot's index in robots() */
   unsigned int robotIndex() const;
 
@@ -868,6 +1036,14 @@ public:
    */
   mc_control::Gripper & gripper(const std::string & gripper);
 
+  /** Access a gripper by name
+   *
+   * \param gripper Gripper name
+   *
+   * \throws If the gripper does not exist within this robot
+   */
+  const mc_control::Gripper & gripper(const std::string & gripper) const;
+
   /** Checks whether a gripper is part of this robot */
   bool hasGripper(const std::string & gripper) const;
 
@@ -924,6 +1100,10 @@ private:
   std::unordered_map<std::string, size_t> bodySensorsIndex_;
   /** Correspondance between bodies' names and attached body sensors */
   std::unordered_map<std::string, size_t> bodyBodySensors_;
+  /** Hold all joint sensors */
+  std::vector<JointSensor> jointSensors_;
+  /** Correspondance between joints' names and attached joint sensors */
+  std::unordered_map<std::string, size_t> jointJointSensors_;
   Springs springs_;
   std::vector<std::vector<Eigen::VectorXd>> tlPoly_;
   std::vector<std::vector<Eigen::VectorXd>> tuPoly_;
@@ -940,26 +1120,49 @@ private:
   DevicePtrVector devices_;
   /** Correspondance between a device's name and a device index */
   std::unordered_map<std::string, size_t> devicesIndex_;
+  /** Frames in this robot */
+  std::unordered_map<std::string, RobotFramePtr> frames_;
 
 protected:
+  struct NewRobotToken
+  {
+  };
+
+public:
   /** Invoked by Robots parent instance after mb/mbc/mbg/RobotModule are stored
    *
    * When loadFiles is set to false, the convex and surfaces files are not
    * loaded. This is used when copying one robot into another.
    *
    */
-  Robot(const std::string & name,
+  Robot(NewRobotToken,
+        const std::string & name,
         Robots & robots,
         unsigned int robots_idx,
         bool loadFiles,
         const sva::PTransformd * base = nullptr,
         const std::string & baseName = "");
 
+protected:
   /** Copy loaded data from this robot to a new robot **/
   void copyLoadedData(Robot & destination) const;
 
-  /** Used to set the surfaces' X_b_s correctly */
+  /**
+   * Used to set all robot surfaces' X_b_s correctly
+   *
+   * This updates all surfaces in surfaces_ vector and should only be called
+   * once
+   */
   void fixSurfaces();
+
+  /**
+   * Used to set the specified surface X_b_s correctly
+   *
+   * This function should only be called once per surface.
+   *
+   * @param surfaces Surface that need to be modified
+   **/
+  void fixSurface(Surface & surface);
 
   /** Used to set the collision transforms correctly */
   void fixCollisionTransforms();

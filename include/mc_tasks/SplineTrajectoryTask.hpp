@@ -14,28 +14,20 @@ namespace mc_tasks
 {
 
 template<typename Derived>
-SplineTrajectoryTask<Derived>::SplineTrajectoryTask(const mc_rbdyn::Robots & robots,
-                                                    unsigned int robotIndex,
-                                                    const std::string & surfaceName,
+SplineTrajectoryTask<Derived>::SplineTrajectoryTask(const mc_rbdyn::RobotFrame & frame,
                                                     double duration,
                                                     double stiffness,
                                                     double weight,
                                                     const Eigen::Matrix3d & target,
                                                     const std::vector<std::pair<double, Eigen::Matrix3d>> & oriWp)
-: TrajectoryTaskGeneric<tasks::qp::TransformTask>(robots, robotIndex, stiffness, weight), rIndex_(robotIndex),
-  surfaceName_(surfaceName), duration_(duration),
-  oriSpline_(duration,
-             robots.robot(robotIndex).surface(surfaceName).X_0_s(robots.robot(robotIndex)).rotation(),
-             target,
-             oriWp),
-  dimWeightInterpolator_(), stiffnessInterpolator_(), dampingInterpolator_()
+: TrajectoryTaskGeneric<tasks::qp::TransformTask>(frame, stiffness, weight), frame_(frame), duration_(duration),
+  oriSpline_(duration, frame.position().rotation(), target, oriWp), dimWeightInterpolator_(), stiffnessInterpolator_(),
+  dampingInterpolator_()
 {
-  const auto & robot = robots.robot(robotIndex);
-  const auto & surface = robot.surface(surfaceName);
   type_ = "trajectory";
-  name_ = "trajectory_" + robot.name() + "_" + surface.name();
+  name_ = "trajectory_" + frame.robot().name() + "_" + frame.name();
 
-  finalize(robots.mbs(), static_cast<int>(robotIndex), surface.bodyName(), surface.X_0_s(robot), surface.X_b_s());
+  finalize(robots.mbs(), static_cast<int>(rIndex), frame.body(), frame.position(), frame.X_b_f());
 }
 
 template<typename Derived>
@@ -79,7 +71,7 @@ std::function<bool(const mc_tasks::MetaTask &, std::string &)> SplineTrajectoryT
     }
     return [dof, target](const mc_tasks::MetaTask & t, std::string & out) {
       const auto & self = static_cast<const SplineTrajectoryTask &>(t);
-      Eigen::Vector6d w = self.robots.robot(self.rIndex).surfaceWrench(self.surfaceName_).vector();
+      Eigen::Vector6d w = self.frame_->wrench().vector();
       for(int i = 0; i < 6; ++i)
       {
         if(dof(i) * fabs(w(i)) < target(i))
@@ -239,7 +231,7 @@ void SplineTrajectoryTask<Derived>::dimWeight(const Eigen::VectorXd & dimW)
 {
   if(dimW.size() != 6)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("SplineTrajectoryTask dimWeight must be a Vector6d!");
+    mc_rtc::log::error_and_throw("SplineTrajectoryTask dimWeight must be a Vector6d!");
   }
 
   dimWeightInterpolator_.clear();
@@ -295,7 +287,7 @@ void SplineTrajectoryTask<Derived>::damping(const Eigen::VectorXd & damping)
 {
   if(damping.size() != 6)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("[{}] dimensional damping must be a Vector6d!", name());
+    mc_rtc::log::error_and_throw("[{}] dimensional damping must be a Vector6d!", name());
   }
 
   dampingInterpolator_.clear();
@@ -313,11 +305,11 @@ void SplineTrajectoryTask<Derived>::setGains(const Eigen::VectorXd & stiffness, 
 {
   if(stiffness.size() != 6)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("[{}] dimensional stiffness must be a Vector6d!", name());
+    mc_rtc::log::error_and_throw("[{}] dimensional stiffness must be a Vector6d!", name());
   }
   else if(damping.size() != 6)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("[{}] dimensional damping must be a Vector6d!", name());
+    mc_rtc::log::error_and_throw("[{}] dimensional damping must be a Vector6d!", name());
   }
   stiffnessInterpolator_.clear();
   dampingInterpolator_.clear();
@@ -342,9 +334,7 @@ const sva::PTransformd SplineTrajectoryTask<Derived>::target() const
 template<typename Derived>
 Eigen::VectorXd SplineTrajectoryTask<Derived>::eval() const
 {
-  const auto & robot = robots.robot(rIndex_);
-  sva::PTransformd X_0_s = robot.surface(surfaceName_).X_0_s(robot);
-  return sva::transformError(X_0_s, target()).vector();
+  return sva::transformError(frame_->position(), target()).vector();
 }
 
 template<typename Derived>
@@ -387,10 +377,7 @@ template<typename Derived>
 void SplineTrajectoryTask<Derived>::addToLogger(mc_rtc::Logger & logger)
 {
   TrajectoryBase::addToLogger(logger);
-  logger.addLogEntry(name_ + "_surfacePose", this, [this]() {
-    const auto & robot = this->robots.robot(rIndex_);
-    return robot.surfacePose(surfaceName_);
-  });
+  logger.addLogEntry(name_ + "_surfacePose", this, [this]() { return frame_->position(); });
   MC_RTC_LOG_GETTER(name_ + "_targetPose", target);
   MC_RTC_LOG_GETTER(name_ + "_refPose", refPose);
   MC_RTC_LOG_HELPER(name_ + "_speed", speed);
@@ -401,13 +388,9 @@ void SplineTrajectoryTask<Derived>::addToGUI(mc_rtc::gui::StateBuilder & gui)
 {
   TrajectoryTask::addToGUI(gui);
 
-  auto & spline = static_cast<Derived &>(*this).spline();
   gui.addElement({"Tasks", name_}, mc_rtc::gui::Checkbox(
                                        "Paused", [this]() { return paused_; }, [this]() { paused_ = !paused_; }));
-  gui.addElement({"Tasks", name_}, mc_rtc::gui::Transform("Surface pose", [this]() {
-                   const auto & robot = this->robots.robot(rIndex_);
-                   return robot.surface(surfaceName_).X_0_s(robot);
-                 }));
+  gui.addElement({"Tasks", name_}, mc_rtc::gui::Transform("Surface pose", [this]() { return frame_->position(); }));
 
   gui.addElement({"Tasks", name_}, mc_rtc::gui::Rotation(
                                        "Target Rotation", [this]() { return this->target(); },
@@ -417,6 +400,7 @@ void SplineTrajectoryTask<Derived>::addToGUI(mc_rtc::gui::StateBuilder & gui)
                                        }));
 
   // Target rotation is handled independently
+  auto & spline = static_cast<Derived &>(*this).spline();
   for(unsigned i = 0; i < oriSpline_.waypoints().size(); ++i)
   {
     gui.addElement(

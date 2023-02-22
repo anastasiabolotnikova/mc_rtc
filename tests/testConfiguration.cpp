@@ -5,6 +5,9 @@
 #include <mc_rtc/Configuration.h>
 #include <mc_rtc/pragma.h>
 
+#include <boost/filesystem.hpp>
+namespace bfs = boost::filesystem;
+
 #include <boost/test/unit_test.hpp>
 
 #include "utils.h"
@@ -30,8 +33,11 @@ string: sometext
 intV: [0, 1, 2, 3, 4, 5]
 stringV: [a, b, c, foo, bar]
 doubleA3: [1.1, 2.2, 3.3]
+v2d: [1.0, 2.3]
 v3d: [1.0, 2.3, -100]
+v4d: [1.0, 2.3, 3.3, -100]
 v6d: [1.0, -1.5, 2.0, -2.5, 3.0, -3.5]
+g6d: [1.0, -1.5, 2.0, -2.5, 3.0, -3.5]
 vXd: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 quat: [0.71, 0, 0.71, 0]
 emptyArray: []
@@ -51,7 +57,9 @@ dict:
   string: sometext
   intV: [0, 1, 2, 3, 4, 5]
   stringV: [a, b, c, foo, bar]
+  v2d: [1.0, 2.3]
   v3d: [1.0, 2.3, -100]
+  v4d: [1.0, 2.3, 3.3, -100]
   v6d: [1.0, -1.5, 2.0, -2.5, 3.0, -3.5]
   quat: [0.71, 0, 0.71, 0]
   doubleDoublePair: [42.5, -42.5]
@@ -82,7 +90,9 @@ static std::string JSON_DATA = R"(
   "intV": [0, 1, 2, 3, 4, 5],
   "stringV": ["a", "b", "c", "foo", "bar"],
   "doubleA3": [1.1, 2.2, 3.3],
+  "v2d": [1.0, 2.3],
   "v3d": [1.0, 2.3, -100],
+  "v4d": [1.0, 2.3, 3.3, -100],
   "v6d": [1.0, -1.5, 2.0, -2.5, 3.0, -3.5],
   "vXd": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
   "quat": [0.71, 0, 0.71, 0],
@@ -104,7 +114,9 @@ static std::string JSON_DATA = R"(
     "string": "sometext",
     "intV": [0, 1, 2, 3, 4, 5],
     "stringV": ["a", "b", "c", "foo", "bar"],
+    "v2d": [1.0, 2.3],
     "v3d": [1.0, 2.3, -100],
+    "v4d": [1.0, 2.3, 3.3, -100],
     "v6d": [1.0, -1.5, 2.0, -2.5, 3.0, -3.5],
     "quat": [0.71, 0, 0.71, 0],
     "doubleDoublePair": [42.5, -42.5],
@@ -299,6 +311,81 @@ void testConfigurationReading(mc_rtc::Configuration & config, bool fromDisk2, bo
     BOOST_CHECK_EQUAL(d, "sometext");
   }
 
+  /* Eigen::Vector2d test */
+  {
+    Eigen::Vector2d ref;
+    ref << 1.0, 2.3;
+    Eigen::Vector2d zero = Eigen::Vector2d::Zero();
+
+    Eigen::Vector2d a = config("v2d");
+    BOOST_CHECK_EQUAL(a, ref);
+
+    Eigen::Vector2d b = Eigen::Vector2d::Zero();
+    config("v2d", b);
+    BOOST_CHECK_EQUAL(b, ref);
+
+    Eigen::Vector2d c = Eigen::Vector2d::Zero();
+    config("v6d", c);
+    BOOST_CHECK_EQUAL(c, zero);
+
+    MC_RTC_diagnostic_push
+    MC_RTC_diagnostic_ignored(GCC, "-Wunused", ClangOnly, "-Wunknown-warning-option", GCC, "-Wunused-but-set-variable")
+    BOOST_CHECK_THROW(Eigen::Vector2d d = config("v6d"), mc_rtc::Configuration::Exception);
+    MC_RTC_diagnostic_pop
+
+    Eigen::Vector2d e = Eigen::Vector2d::Zero();
+    e = config("dict")("v2d");
+    BOOST_CHECK_EQUAL(e, ref);
+
+    Eigen::Vector2d f = Eigen::Vector2d::Zero();
+    config("dict")("v2d", f);
+    BOOST_CHECK_EQUAL(f, ref);
+  }
+
+  /* mc_rbdyn::Gains2d test */
+  {
+    mc_rbdyn::Gains2d ref;
+    ref << 1.0, 2.3;
+    mc_rbdyn::Gains2d zero = mc_rbdyn::Gains2d::Zero();
+
+    mc_rbdyn::Gains2d a = config("v2d");
+    BOOST_CHECK_EQUAL(a, ref);
+
+    mc_rbdyn::Gains2d b = mc_rbdyn::Gains2d::Zero();
+    config("v2d", b);
+    BOOST_CHECK_EQUAL(b, ref);
+
+    mc_rbdyn::Gains2d c = mc_rbdyn::Gains2d::Zero();
+    config("v6d", c);
+    BOOST_CHECK_EQUAL(c, zero);
+
+    MC_RTC_diagnostic_push
+    MC_RTC_diagnostic_ignored(GCC, "-Wunused", ClangOnly, "-Wunknown-warning-option", GCC, "-Wunused-but-set-variable")
+    BOOST_CHECK_THROW(mc_rbdyn::Gains2d d = config("v6d"), mc_rtc::Configuration::Exception);
+    MC_RTC_diagnostic_pop
+
+    mc_rbdyn::Gains2d e = mc_rbdyn::Gains2d::Zero();
+    e = config("dict")("v2d");
+    BOOST_CHECK_EQUAL(e, ref);
+
+    mc_rbdyn::Gains2d f = mc_rbdyn::Gains2d::Zero();
+    config("dict")("v2d", f);
+    BOOST_CHECK_EQUAL(f, ref);
+
+    ref.setConstant(42.5);
+
+    mc_rbdyn::Gains2d g = config("double");
+    BOOST_CHECK_EQUAL(g, ref);
+
+    mc_rbdyn::Gains2d h = mc_rbdyn::Gains2d::Zero();
+    config("double", h);
+    BOOST_CHECK_EQUAL(h, ref);
+
+    mc_rbdyn::Gains2d i = mc_rbdyn::Gains2d::Zero();
+    i = config("dict")("double");
+    BOOST_CHECK_EQUAL(i, ref);
+  }
+
   /* Eigen::Vector3d test */
   {
     Eigen::Vector3d ref;
@@ -327,6 +414,81 @@ void testConfigurationReading(mc_rtc::Configuration & config, bool fromDisk2, bo
 
     Eigen::Vector3d f = Eigen::Vector3d::Zero();
     config("dict")("v3d", f);
+    BOOST_CHECK_EQUAL(f, ref);
+  }
+
+  /* mc_rbdyn::Gains3d test */
+  {
+    mc_rbdyn::Gains3d ref;
+    ref << 1.0, 2.3, -100;
+    mc_rbdyn::Gains3d zero = mc_rbdyn::Gains3d::Zero();
+
+    mc_rbdyn::Gains3d a = config("v3d");
+    BOOST_CHECK_EQUAL(a, ref);
+
+    mc_rbdyn::Gains3d b = mc_rbdyn::Gains3d::Zero();
+    config("v3d", b);
+    BOOST_CHECK_EQUAL(b, ref);
+
+    mc_rbdyn::Gains3d c = mc_rbdyn::Gains3d::Zero();
+    config("v6d", c);
+    BOOST_CHECK_EQUAL(c, zero);
+
+    MC_RTC_diagnostic_push
+    MC_RTC_diagnostic_ignored(GCC, "-Wunused", ClangOnly, "-Wunknown-warning-option", GCC, "-Wunused-but-set-variable")
+    BOOST_CHECK_THROW(mc_rbdyn::Gains3d d = config("v6d"), mc_rtc::Configuration::Exception);
+    MC_RTC_diagnostic_pop
+
+    mc_rbdyn::Gains3d e = mc_rbdyn::Gains3d::Zero();
+    e = config("dict")("v3d");
+    BOOST_CHECK_EQUAL(e, ref);
+
+    mc_rbdyn::Gains3d f = mc_rbdyn::Gains3d::Zero();
+    config("dict")("v3d", f);
+    BOOST_CHECK_EQUAL(f, ref);
+
+    ref.setConstant(42.5);
+
+    mc_rbdyn::Gains3d g = config("double");
+    BOOST_CHECK_EQUAL(g, ref);
+
+    mc_rbdyn::Gains3d h = mc_rbdyn::Gains3d::Zero();
+    config("double", h);
+    BOOST_CHECK_EQUAL(h, ref);
+
+    mc_rbdyn::Gains3d i = mc_rbdyn::Gains3d::Zero();
+    i = config("dict")("double");
+    BOOST_CHECK_EQUAL(i, ref);
+  }
+
+  /* Eigen::Vector4d test */
+  {
+    Eigen::Vector4d ref;
+    ref << 1.0, 2.3, 3.3, -100;
+    Eigen::Vector4d zero = Eigen::Vector4d::Zero();
+
+    Eigen::Vector4d a = config("v4d");
+    BOOST_CHECK_EQUAL(a, ref);
+
+    Eigen::Vector4d b = Eigen::Vector4d::Zero();
+    config("v4d", b);
+    BOOST_CHECK_EQUAL(b, ref);
+
+    Eigen::Vector4d c = Eigen::Vector4d::Zero();
+    config("v6d", c);
+    BOOST_CHECK_EQUAL(c, zero);
+
+    MC_RTC_diagnostic_push
+    MC_RTC_diagnostic_ignored(GCC, "-Wunused", ClangOnly, "-Wunknown-warning-option", GCC, "-Wunused-but-set-variable")
+    BOOST_CHECK_THROW(Eigen::Vector4d d = config("v6d"), mc_rtc::Configuration::Exception);
+    MC_RTC_diagnostic_pop
+
+    Eigen::Vector4d e = Eigen::Vector4d::Zero();
+    e = config("dict")("v4d");
+    BOOST_CHECK_EQUAL(e, ref);
+
+    Eigen::Vector4d f = Eigen::Vector4d::Zero();
+    config("dict")("v4d", f);
     BOOST_CHECK_EQUAL(f, ref);
   }
 
@@ -359,6 +521,50 @@ void testConfigurationReading(mc_rtc::Configuration & config, bool fromDisk2, bo
     Eigen::Vector6d f = Eigen::Vector6d::Zero();
     config("dict")("v6d", f);
     BOOST_CHECK_EQUAL(f, ref);
+  }
+
+  /* mc_rbdyn::Gains6d test */
+  {
+    mc_rbdyn::Gains6d ref;
+    ref << 1.0, -1.5, 2.0, -2.5, 3.0, -3.5;
+    mc_rbdyn::Gains6d zero = mc_rbdyn::Gains6d::Zero();
+
+    mc_rbdyn::Gains6d a = config("v6d");
+    BOOST_CHECK_EQUAL(a, ref);
+
+    mc_rbdyn::Gains6d b = mc_rbdyn::Gains6d::Zero();
+    config("v6d", b);
+    BOOST_CHECK_EQUAL(b, ref);
+
+    mc_rbdyn::Gains6d c = mc_rbdyn::Gains6d::Zero();
+    config("v3d", c);
+    BOOST_CHECK_EQUAL(c, zero);
+
+    MC_RTC_diagnostic_push
+    MC_RTC_diagnostic_ignored(GCC, "-Wunused", ClangOnly, "-Wunknown-warning-option", GCC, "-Wunused-but-set-variable")
+    BOOST_CHECK_THROW(mc_rbdyn::Gains6d d = config("v3d"), mc_rtc::Configuration::Exception);
+    MC_RTC_diagnostic_pop
+
+    mc_rbdyn::Gains6d e = mc_rbdyn::Gains6d::Zero();
+    e = config("dict")("v6d");
+    BOOST_CHECK_EQUAL(e, ref);
+
+    mc_rbdyn::Gains6d f = mc_rbdyn::Gains6d::Zero();
+    config("dict")("v6d", f);
+    BOOST_CHECK_EQUAL(f, ref);
+
+    ref.setConstant(42.5);
+
+    mc_rbdyn::Gains6d g = config("double");
+    BOOST_CHECK_EQUAL(g, ref);
+
+    mc_rbdyn::Gains6d h = mc_rbdyn::Gains6d::Zero();
+    config("double", h);
+    BOOST_CHECK_EQUAL(h, ref);
+
+    mc_rbdyn::Gains6d i = mc_rbdyn::Gains6d::Zero();
+    i = config("dict")("double");
+    BOOST_CHECK_EQUAL(i, ref);
   }
 
   /* Eigen::VectorXd test */
@@ -636,7 +842,9 @@ void testConfigurationReading(mc_rtc::Configuration & config, bool fromDisk2, bo
   {
     if(fromDisk2)
     {
-      config.load(sampleConfig2(true, json2));
+      std::string path = sampleConfig2(true, json2);
+      config.load(path);
+      bfs::remove(path);
     }
     else
     {
@@ -667,7 +875,10 @@ mc_rtc::Configuration makeConfig(bool fromDisk, bool json)
 {
   if(fromDisk)
   {
-    return mc_rtc::Configuration(sampleConfig(fromDisk, json));
+    auto path = sampleConfig(fromDisk, json);
+    auto out = mc_rtc::Configuration(path);
+    bfs::remove(path);
+    return out;
   }
   else
   {
@@ -799,6 +1010,8 @@ BOOST_AUTO_TEST_CASE(TestConfigurationWriting)
 
   mc_rtc::Configuration config_partial(tmpF);
   BOOST_CHECK(config_partial == ref_double_v);
+
+  bfs::remove(tmpF);
 }
 
 BOOST_AUTO_TEST_CASE(TestConfigurationCeption)
@@ -1128,5 +1341,87 @@ BOOST_AUTO_TEST_CASE(TestConfigurationYAMLTweaks)
     BOOST_REQUIRE(config.has(key));
     std::string value = config(key);
     BOOST_REQUIRE_EQUAL(value, k);
+  }
+}
+
+BOOST_AUTO_TEST_CASE(TestFileConfiguration)
+{
+  auto file = sampleConfig2(true, false);
+  {
+    mc_rtc::ConfigurationFile config(file);
+    BOOST_REQUIRE_EQUAL(config.path(), file);
+    BOOST_REQUIRE(config.has("int"));
+    int i = config("int");
+    BOOST_REQUIRE_EQUAL(i, 12);
+    config.remove("int");
+    BOOST_REQUIRE(!config.has("int"));
+    config.reload();
+    BOOST_REQUIRE(config.has("int"));
+    i = config("int");
+    BOOST_REQUIRE_EQUAL(i, 12);
+    config.add("int", 42);
+    config.add("string", "Hello world");
+    config.save();
+  }
+  {
+    mc_rtc::Configuration config(file);
+    BOOST_REQUIRE(config.has("int"));
+    int i = config("int");
+    BOOST_REQUIRE(config.has("string"));
+    std::string s = config("string");
+    BOOST_REQUIRE_EQUAL(s, "Hello world");
+    BOOST_REQUIRE_EQUAL(i, 42);
+  }
+  bfs::remove(file);
+}
+
+/** We purposefully create a number-like class that would create an ambiguity without the numeric_limits specialization
+ */
+struct MyNumber
+{
+  uint64_t n = 42;
+  MyNumber() = default;
+  MyNumber(uint64_t n) : n(n) {}
+
+  operator uint64_t() const
+  {
+    return n;
+  }
+  operator uint32_t() const
+  {
+    return static_cast<uint32_t>(n);
+  }
+};
+
+namespace std
+{
+
+template<>
+class numeric_limits<MyNumber> : public numeric_limits<uint64_t>
+{
+};
+
+} // namespace std
+
+BOOST_AUTO_TEST_CASE(TestIntegralTypes)
+{
+  MyNumber number;
+  mc_rtc::Configuration config;
+  config.add("number", number);
+  {
+    MyNumber number2 = config("number");
+    BOOST_CHECK_EQUAL(number.n, number2.n);
+  }
+  {
+    auto array = config.array("array");
+    array.push(number);
+    MyNumber number2 = config("array")[0];
+    BOOST_CHECK_EQUAL(number.n, number2.n);
+  }
+  {
+    std::vector<char> buffer(512);
+    mc_rtc::MessagePackBuilder builder(buffer);
+    builder.write(number);
+    builder.finish();
   }
 }

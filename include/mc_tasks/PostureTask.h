@@ -72,7 +72,7 @@ public:
    */
   inline void refVel(const Eigen::VectorXd & refVel) noexcept
   {
-    assert(refVel.size() == robots_.robots()[rIndex_].mb().nrDof());
+    assert(refVel.size() == robots_.robot(rIndex_).mb().nrDof());
     pt_.refVel(refVel);
   }
 
@@ -88,7 +88,7 @@ public:
    */
   inline void refAccel(const Eigen::VectorXd & refAccel) noexcept
   {
-    assert(refAccel.size() == robots_.robots()[rIndex_].mb().nrDof());
+    assert(refAccel.size() == robots_.robot(rIndex_).mb().nrDof());
     pt_.refAccel(refAccel);
   }
 
@@ -114,17 +114,36 @@ public:
    */
   void target(const std::map<std::string, std::vector<double>> & joints);
 
-  /** Set task's stiffness */
+  /** Set the task stiffness/damping
+   *
+   * Damping is automatically set to 2*sqrt(stiffness)
+   *
+   * \param stiffness Task stiffness
+   *
+   */
   void stiffness(double s);
 
-  /** Get task's stiffness */
+  /** Get the current task's stiffness */
   double stiffness() const;
 
-  /** Set task's damping */
+  /** Set the task damping, leaving its stiffness unchanged
+   *
+   * \param damping Task stiffness
+   *
+   */
   void damping(double d);
 
-  /** Get task's damping */
+  /** Get the task's current damping */
   double damping() const;
+
+  /** Set both stiffness and damping
+   *
+   * \param stiffness Task stiffness
+   *
+   * \param damping Task damping
+   *
+   */
+  void setGains(double stiffness, double damping);
 
   /** Set task's weight */
   void weight(double w);

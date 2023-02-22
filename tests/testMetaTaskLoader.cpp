@@ -531,7 +531,6 @@ struct TaskTester<mc_tasks::VectorOrientationTask>
     BOOST_CHECK_CLOSE(ref->stiffness(), loaded->stiffness(), 1e-6);
     BOOST_CHECK_CLOSE(ref->weight(), loaded->weight(), 1e-6);
     BOOST_CHECK(ref->body() == loaded->body());
-    BOOST_CHECK(ref->bodyVector().isApprox(loaded->bodyVector()));
   }
 
   Eigen::Vector3d bodyVector = Eigen::Vector3d::Random();
@@ -686,4 +685,5 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(TestMetaTaskLoader, T, test_types)
   auto conf = tester.json();
   auto loaded = mc_tasks::MetaTaskLoader::load(solver, conf);
   tester.check(ref, loaded);
+  bfs::remove(conf);
 }

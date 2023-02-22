@@ -7,6 +7,8 @@
 #include <mc_control/fsm/State.h>
 #include <mc_rtc/loader.h>
 
+#include <unordered_map>
+
 namespace mc_rtc
 {
 struct Configuration;
@@ -30,9 +32,6 @@ struct MC_CONTROL_FSM_DLLAPI Controller;
 struct MC_CONTROL_FSM_DLLAPI StateFactory : public mc_rtc::ObjectLoader<State>
 {
   /** Constructor
-   *
-   * Note: this class is based on mc_rtc::ObjectLoader but sandboxed
-   * creation is systematically disabled
    *
    * \param paths List of paths to load states libraries from
    *
@@ -76,6 +75,20 @@ struct MC_CONTROL_FSM_DLLAPI StateFactory : public mc_rtc::ObjectLoader<State>
   /** Creates a state without extra configuration */
   StatePtr create(const std::string & state, Controller & ctl);
 
+  /** Creates a and configures a state but does not start it
+   *
+   * This is meant for tools working with the FSM
+   *
+   */
+  StatePtr create(const std::string & state, const mc_rtc::Configuration & config);
+
+  /** Creates a state but does not start it
+   *
+   * This is meant for tools working with the FSM
+   *
+   */
+  StatePtr create(const std::string & state);
+
   /** Query existence of a state */
   bool hasState(const std::string & state) const;
 
@@ -102,9 +115,27 @@ struct MC_CONTROL_FSM_DLLAPI StateFactory : public mc_rtc::ObjectLoader<State>
     states_.push_back(name);
   }
 
+  /** Holds the configuration for a derived state */
+  struct StateConfiguration
+  {
+    /** Base state to use */
+    std::string base;
+    /** Arguments to pass down to the loader if any */
+    std::string arg;
+    /** Extra-configuration to apply on top of base configuration */
+    mc_rtc::Configuration config;
+  };
+
+  /** Returns the configuration of a specific state */
+  inline const StateConfiguration & configuration(const std::string & state) const
+  {
+    return states_configurations_.at(state);
+  }
+
 private:
   /** Create a state from libraries or factory */
-  StatePtr create(const std::string & state);
+  StatePtr create(const std::string & state, const std::string & final_name);
+
   /** Implementation for create */
   StatePtr create(const std::string & state,
                   Controller & ctl,
@@ -115,8 +146,7 @@ private:
 
 private:
   std::vector<std::string> states_;
-  using state_factory_fn = std::function<StatePtr(StateFactory &)>;
-  std::map<std::string, state_factory_fn> states_factories_;
+  std::unordered_map<std::string, StateConfiguration> states_configurations_;
 };
 
 } // namespace fsm

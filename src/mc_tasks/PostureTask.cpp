@@ -87,7 +87,7 @@ void PostureTask::selectUnactiveJoints(mc_solver::QPSolver &,
   ensureHasJoints(robots_.robot(rIndex_), unactiveJointsName, "[" + name() + "::selectUnActiveJoints]");
   Eigen::VectorXd dimW = pt_.dimWeight();
   dimW.setOnes();
-  const auto & robot = robots_.robots()[rIndex_];
+  const auto & robot = robots_.robot(rIndex_);
   for(const auto & j : unactiveJointsName)
   {
     auto jIndex = static_cast<int>(robot.jointIndexByName(j));
@@ -105,7 +105,7 @@ void PostureTask::resetJointsSelector(mc_solver::QPSolver & solver)
 
 Eigen::VectorXd PostureTask::eval() const
 {
-  return pt_.eval();
+  return pt_.dimWeight().asDiagonal() * pt_.eval();
 }
 
 Eigen::VectorXd PostureTask::speed() const
@@ -133,7 +133,7 @@ void PostureTask::removeFromSolver(mc_solver::QPSolver & solver)
 
 void PostureTask::update(mc_solver::QPSolver &)
 {
-  speed_ = (pt_.eval() - eval_) / dt_;
+  speed_ = pt_.dimWeight().asDiagonal() * (pt_.eval() - eval_) / dt_;
   eval_ = pt_.eval();
 }
 
@@ -166,6 +166,11 @@ void PostureTask::damping(double d)
 double PostureTask::damping() const
 {
   return pt_.damping();
+}
+
+inline void PostureTask::setGains(double s, double d)
+{
+  pt_.gains(s, d);
 }
 
 void PostureTask::weight(double w)
@@ -240,12 +245,18 @@ void PostureTask::addToLogger(mc_rtc::Logger & logger)
 void PostureTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
 {
   MetaTask::addToGUI(gui);
-  gui.addElement(
-      {"Tasks", name_, "Gains"},
-      mc_rtc::gui::NumberInput(
-          "stiffness", [this]() { return this->stiffness(); }, [this](const double & s) { this->stiffness(s); }),
-      mc_rtc::gui::NumberInput(
-          "weight", [this]() { return this->weight(); }, [this](const double & w) { this->weight(w); }));
+  gui.addElement({"Tasks", name_, "Gains"},
+                 mc_rtc::gui::NumberInput(
+                     "stiffness", [this]() { return this->stiffness(); },
+                     [this](const double & s) { this->setGains(s, this->damping()); }),
+                 mc_rtc::gui::NumberInput(
+                     "damping", [this]() { return this->damping(); },
+                     [this](const double & d) { this->setGains(this->stiffness(), d); }),
+                 mc_rtc::gui::NumberInput(
+                     "stiffness & damping", [this]() { return this->stiffness(); },
+                     [this](const double & g) { this->stiffness(g); }),
+                 mc_rtc::gui::NumberInput(
+                     "weight", [this]() { return this->weight(); }, [this](const double & w) { this->weight(w); }));
   std::vector<std::string> active_gripper_joints;
   for(const auto & g : robots_.robot(rIndex_).grippers())
   {

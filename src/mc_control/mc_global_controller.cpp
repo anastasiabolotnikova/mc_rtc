@@ -22,10 +22,6 @@
 #include <mc_rtc/io_utils.h>
 #include <mc_rtc/logging.h>
 
-#include <RBDyn/EulerIntegration.h>
-#include <RBDyn/FK.h>
-#include <RBDyn/FV.h>
-
 #include <boost/chrono.hpp>
 
 #include <algorithm>
@@ -51,14 +47,13 @@ MCGlobalController::MCGlobalController(const GlobalConfiguration & conf)
   try
   {
     plugin_loader_.reset(new mc_rtc::ObjectLoader<mc_control::GlobalPlugin>(
-        "MC_RTC_GLOBAL_PLUGIN", config.global_plugin_paths, config.use_sandbox, config.verbose_loader));
+        "MC_RTC_GLOBAL_PLUGIN", config.global_plugin_paths, config.verbose_loader));
   }
   catch(mc_rtc::LoaderException & exc)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("Failed to initialize plugin loader");
+    mc_rtc::log::error_and_throw("Failed to initialize plugin loader");
   }
 #ifdef MC_RTC_BUILD_STATIC
-  GlobalPluginLoader::loader().enable_sandboxing(config.use_sandbox);
   GlobalPluginLoader::loader().set_verbosity(config.verbose_loader);
 #endif
   for(const auto & plugin : config.global_plugins)
@@ -71,14 +66,13 @@ MCGlobalController::MCGlobalController(const GlobalConfiguration & conf)
   try
   {
     controller_loader_.reset(new mc_rtc::ObjectLoader<mc_control::MCController>(
-        "MC_RTC_CONTROLLER", config.controller_module_paths, config.use_sandbox, config.verbose_loader));
+        "MC_RTC_CONTROLLER", config.controller_module_paths, config.verbose_loader));
   }
   catch(mc_rtc::LoaderException & exc)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("Failed to initialize controller loader");
+    mc_rtc::log::error_and_throw("Failed to initialize controller loader");
   }
 #ifdef MC_RTC_BUILD_STATIC
-  ControllerLoader::loader().enable_sandboxing(config.use_sandbox);
   ControllerLoader::loader().set_verbosity(config.verbose_loader);
 #endif
   if(std::find(config.enabled_controllers.begin(), config.enabled_controllers.end(), "HalfSitPose")
@@ -110,7 +104,7 @@ MCGlobalController::MCGlobalController(const GlobalConfiguration & conf)
                       "\t- The controller library is not in a path read by mc_rtc\n"
                       "\t- The controller constuctor segfaults\n"
                       "\t- The controller library hasn't been properly linked");
-    mc_rtc::log::error_and_throw<std::runtime_error>("No controller enabled");
+    mc_rtc::log::error_and_throw("No controller enabled");
   }
 
   if(config.enable_gui_server)
@@ -190,47 +184,53 @@ void MCGlobalController::init(const std::vector<double> & initq)
   initEncoders(robot(), initq);
 
   auto & q = robot().mbc().q;
-  // Configure initial attitude (requires FK to be computed)
-  if(config.init_attitude_from_sensor)
+  if(!controller_->config().has("init_pos")
+     && !(controller_->config().has(robot().name()) && controller_->config()(robot().name()).has("init_pos")))
   {
-    auto initAttitude = [this](const mc_rbdyn::BodySensor & sensor) {
-      mc_rtc::log::info("Initializing attitude from body sensor: {}", sensor.name());
-      // Update free flyer from body sensor takin into account the kinematics
-      // between sensor and body
-      const auto & fb = robot().mb().body(0).name();
-      sva::PTransformd X_0_s(sensor.orientation(), sensor.position());
-      const auto X_s_b = sensor.X_b_s().inv();
-      sva::PTransformd X_b_fb = robot().X_b1_b2(sensor.parentBody(), fb);
-      sva::PTransformd X_s_fb = X_b_fb * X_s_b;
-      robot().posW(X_s_fb * X_0_s);
-    };
-    if(config.init_attitude_sensor.empty())
+    // Configure initial attitude (requires FK to be computed)
+    if(config.init_attitude_from_sensor)
     {
-      initAttitude(controller_->robot().bodySensor());
-    }
-    else
-    {
-      if(controller_->robot().hasBodySensor(config.init_attitude_sensor))
+      auto initAttitude = [this](const mc_rbdyn::BodySensor & sensor) {
+        mc_rtc::log::info("Initializing attitude from body sensor: {}", sensor.name());
+        // Update free flyer from body sensor takin into account the kinematics
+        // between sensor and body
+        const auto & fb = robot().mb().body(0).name();
+        sva::PTransformd X_0_s(sensor.orientation(), sensor.position());
+        const auto X_s_b = sensor.X_b_s().inv();
+        sva::PTransformd X_b_fb = robot().X_b1_b2(sensor.parentBody(), fb);
+        sva::PTransformd X_s_fb = X_b_fb * X_s_b;
+        auto initPos = X_s_fb * X_0_s;
+        robot().posW(initPos);
+        realRobot().posW(initPos);
+      };
+      if(config.init_attitude_sensor.empty())
       {
-        initAttitude(controller_->robot().bodySensor(config.init_attitude_sensor));
+        initAttitude(controller_->robot().bodySensor());
       }
       else
       {
-        mc_rtc::log::error_and_throw<std::invalid_argument>("No body sensor named {}, could not initialize attitude. "
-                                                            "Please check your InitAttitudeSensor configuration.",
-                                                            config.init_attitude_sensor);
+        if(controller_->robot().hasBodySensor(config.init_attitude_sensor))
+        {
+          initAttitude(controller_->robot().bodySensor(config.init_attitude_sensor));
+        }
+        else
+        {
+          mc_rtc::log::error_and_throw<std::invalid_argument>("No body sensor named {}, could not initialize attitude. "
+                                                              "Please check your InitAttitudeSensor configuration.",
+                                                              config.init_attitude_sensor);
+        }
       }
     }
-  }
-  else
-  {
-    mc_rtc::log::info("Initializing attitude from robot module: q=[{}]",
-                      mc_rtc::io::to_string(robot().module().default_attitude(), ", ", 3));
-    if(q[0].size() == 7)
+    else
     {
-      const auto & initAttitude = robot().module().default_attitude();
-      q[0] = {std::begin(initAttitude), std::end(initAttitude)};
-      robot().forwardKinematics();
+      mc_rtc::log::info("Initializing attitude from robot module: q=[{}]",
+                        mc_rtc::io::to_string(robot().module().default_attitude(), ", ", 3));
+      if(q[0].size() == 7)
+      {
+        const auto & initAttitude = robot().module().default_attitude();
+        q[0] = {std::begin(initAttitude), std::end(initAttitude)};
+        robot().forwardKinematics();
+      }
     }
   }
   for(auto & robot : robots())
@@ -313,10 +313,20 @@ void MCGlobalController::initEncoders(mc_rbdyn::Robot & robot, const std::vector
     const auto & jn = rjo[i];
     if(robot.hasJoint(jn))
     {
-      q[robot.jointIndexByName(jn)][0] = initq[i];
+      auto jIndex = robot.jointIndexByName(jn);
+      auto jDof = robot.mb().joint(static_cast<int>(jIndex)).dof();
+      if(jDof == 1)
+      {
+        q[jIndex][0] = initq[i];
+      }
+      else if(jDof > 1)
+      {
+        mc_rtc::log::warning("Not using encoder values to initialize {}, please complain to mc_rtc maintainers",
+                             rjo[i]);
+      }
     }
   }
-  for(auto & g : controller_->robot().grippers())
+  for(auto & g : robot.grippers())
   {
     g.get().reset(initq);
   }
@@ -340,14 +350,21 @@ void MCGlobalController::initEncoders(mc_rbdyn::Robot & robot)
     {
       auto jIndex = robot.jointIndexByName(j);
       const auto & q = robot.mbc().q[jIndex];
-      for(const auto & qi : q)
+      if(q.size())
       {
-        rinitq.push_back(qi);
+        for(const auto & qi : q)
+        {
+          rinitq.push_back(qi);
+        }
+      }
+      else
+      {
+        rinitq.push_back(0.0);
       }
     }
     else
     {
-      rinitq.push_back(0);
+      rinitq.push_back(0.0);
     }
   }
   for(auto & g : robot.grippers())
@@ -665,6 +682,100 @@ void MCGlobalController::setWrenches(unsigned int robotIndex, const std::map<std
   }
 }
 
+void MCGlobalController::setJointMotorTemperature(const std::string & joint, double temperature)
+{
+  setJointMotorTemperature(controller_->robot().name(), joint, temperature);
+}
+
+void MCGlobalController::setJointMotorTemperature(const std::string & robotName,
+                                                  const std::string & joint,
+                                                  double temperature)
+{
+  auto & robot = this->robot(robotName);
+  auto & realRobot = this->realRobot(robotName);
+  robot.jointJointSensor(joint).motorTemperature(temperature);
+  realRobot.jointJointSensor(joint).motorTemperature(temperature);
+}
+
+void MCGlobalController::setJointMotorTemperatures(const std::map<std::string, double> & temperatures)
+{
+  setJointMotorTemperatures(controller_->robot().name(), temperatures);
+}
+
+void MCGlobalController::setJointMotorTemperatures(const std::string & robotName,
+                                                   const std::map<std::string, double> & temperatures)
+{
+  auto & robot = this->robot(robotName);
+  auto & realRobot = this->realRobot(robotName);
+  for(const auto & t : temperatures)
+  {
+    robot.jointJointSensor(t.first).motorTemperature(t.second);
+    realRobot.jointJointSensor(t.first).motorTemperature(t.second);
+  }
+}
+
+void MCGlobalController::setJointDriverTemperature(const std::string & joint, double temperature)
+{
+  setJointDriverTemperature(controller_->robot().name(), joint, temperature);
+}
+
+void MCGlobalController::setJointDriverTemperature(const std::string & robotName,
+                                                   const std::string & joint,
+                                                   double temperature)
+{
+  auto & robot = this->robot(robotName);
+  auto & realRobot = this->realRobot(robotName);
+  robot.jointJointSensor(joint).motorTemperature(temperature);
+  realRobot.jointJointSensor(joint).motorTemperature(temperature);
+}
+
+void MCGlobalController::setJointDriverTemperatures(const std::map<std::string, double> & temperatures)
+{
+  setJointDriverTemperatures(controller_->robot().name(), temperatures);
+}
+
+void MCGlobalController::setJointDriverTemperatures(const std::string & robotName,
+                                                    const std::map<std::string, double> & temperatures)
+{
+  auto & robot = this->robot(robotName);
+  auto & realRobot = this->realRobot(robotName);
+  for(const auto & t : temperatures)
+  {
+    robot.jointJointSensor(t.first).motorTemperature(t.second);
+    realRobot.jointJointSensor(t.first).motorTemperature(t.second);
+  }
+}
+
+void MCGlobalController::setJointMotorCurrent(const std::string & joint, double current)
+{
+  setJointMotorCurrent(controller_->robot().name(), joint, current);
+}
+
+void MCGlobalController::setJointMotorCurrent(const std::string & robotName, const std::string & joint, double current)
+{
+  auto & robot = this->robot(robotName);
+  auto & realRobot = this->realRobot(robotName);
+  robot.jointJointSensor(joint).motorCurrent(current);
+  realRobot.jointJointSensor(joint).motorCurrent(current);
+}
+
+void MCGlobalController::setJointMotorCurrents(const std::map<std::string, double> & currents)
+{
+  setJointMotorCurrents(controller_->robot().name(), currents);
+}
+
+void MCGlobalController::setJointMotorCurrents(const std::string & robotName,
+                                               const std::map<std::string, double> & currents)
+{
+  auto & robot = this->robot(robotName);
+  auto & realRobot = this->realRobot(robotName);
+  for(const auto & c : currents)
+  {
+    robot.jointJointSensor(c.first).motorCurrent(c.second);
+    realRobot.jointJointSensor(c.first).motorCurrent(c.second);
+  }
+}
+
 bool MCGlobalController::run()
 {
   /** Always pick a steady clock */
@@ -704,6 +815,19 @@ bool MCGlobalController::run()
       {
         fs.wrench(controller_->realRobot().forceSensor(fs.name()).wrench());
       }
+      for(auto & js : next_controller_->robot().jointSensors())
+      {
+        js.motorTemperature(controller_->robot().jointJointSensor(js.joint()).motorTemperature());
+        js.driverTemperature(controller_->robot().jointJointSensor(js.joint()).driverTemperature());
+        js.motorCurrent(controller_->robot().jointJointSensor(js.joint()).motorCurrent());
+      }
+      for(auto & js : next_controller_->realRobot().jointSensors())
+      {
+        js.motorTemperature(controller_->realRobot().jointJointSensor(js.joint()).motorTemperature());
+        js.driverTemperature(controller_->realRobot().jointJointSensor(js.joint()).driverTemperature());
+        js.motorCurrent(controller_->realRobot().jointJointSensor(js.joint()).motorCurrent());
+      }
+      next_controller_->realRobot().mbc() = controller_->realRobot().mbc();
     }
     if(!running)
     {
@@ -999,6 +1123,8 @@ bool MCGlobalController::AddController(const std::string & name)
                                                            config.controllers_configs[name]);
     }
     controllers[name]->name_ = name;
+    controllers[name]->datastore().make_call("Global::EnableController",
+                                             [this](const std::string & name) { return EnableController(name); });
     if(config.enable_log)
     {
       controllers[name]->logger().setup(config.log_policy, config.log_directory, config.log_template);
@@ -1089,83 +1215,6 @@ void MCGlobalController::setup_log()
   }
   // Copy controller pointer to avoid lambda issue
   MCController * controller = controller_;
-  controller->logger().addLogEntry(
-      "qIn", [controller]() -> const std::vector<double> & { return controller->robot().encoderValues(); });
-  controller->logger().addLogEntry(
-      "ff", [controller]() -> const sva::PTransformd & { return controller->robot().mbc().bodyPosW[0]; });
-  // Convert reference order to mbc.q, -1 if the joint does not exist
-  std::vector<int> refToQ;
-  for(const auto & j : controller->robot().refJointOrder())
-  {
-    if(controller->robot().hasJoint(j))
-    {
-      int jIndex = static_cast<int>(controller->robot().jointIndexByName(j));
-      if(controller->robot().mb().joint(jIndex).dof() == 1)
-      {
-        refToQ.push_back(jIndex);
-        continue;
-      }
-    }
-    refToQ.push_back(-1);
-  }
-  std::vector<double> qOut(controller->robot().refJointOrder().size(), 0);
-  controller->logger().addLogEntry("qOut", [controller, refToQ, qOut]() mutable -> const std::vector<double> & {
-    for(size_t i = 0; i < qOut.size(); ++i)
-    {
-      if(refToQ[i] != -1)
-      {
-        qOut[i] = controller->robot().mbc().q[static_cast<size_t>(refToQ[i])][0];
-      }
-    }
-    return qOut;
-  });
-  controller->logger().addLogEntry(
-      "tauIn", [controller]() -> const std::vector<double> & { return controller->robot().jointTorques(); });
-  for(const auto & fs : controller->robot().forceSensors())
-  {
-    const auto & fs_name = fs.name();
-    controller->logger().addLogEntry(fs.name(), [controller, fs_name]() -> const sva::ForceVecd & {
-      return controller->robot().forceSensor(fs_name).wrench();
-    });
-  }
-
-  // Log all body sensors
-  const auto & bodySensors = controller->robot().bodySensors();
-  for(size_t i = 0; i < bodySensors.size(); ++i)
-  {
-    const auto & name = bodySensors[i].name();
-    controller->logger().addLogEntry(name + "_position", [controller, name]() -> const Eigen::Vector3d & {
-      return controller->robot().bodySensor(name).position();
-    });
-    controller->logger().addLogEntry(name + "_orientation", [controller, name]() -> const Eigen::Quaterniond & {
-      return controller->robot().bodySensor(name).orientation();
-    });
-    controller->logger().addLogEntry(name + "_linearVelocity", [controller, name]() -> const Eigen::Vector3d & {
-      return controller->robot().bodySensor(name).linearVelocity();
-    });
-    controller->logger().addLogEntry(name + "_angularVelocity", [controller, name]() -> const Eigen::Vector3d & {
-      return controller->robot().bodySensor(name).angularVelocity();
-    });
-    controller->logger().addLogEntry(name + "_linearAcceleration", [controller, name]() -> const Eigen::Vector3d & {
-      return controller->robot().bodySensor(name).linearAcceleration();
-    });
-    controller->logger().addLogEntry(name + "_angularAcceleration", [controller, name]() -> const Eigen::Vector3d & {
-      return controller->robot().bodySensor(name).angularAcceleration();
-    });
-  }
-
-  if(config.log_real)
-  {
-    controller->logger().addLogEntry("realRobot_ff", [controller]() -> const sva::PTransformd & {
-      return controller->realRobots().robot().mbc().bodyPosW[0];
-    });
-    controller->logger().addLogEntry(
-        "realRobot_q", [controller]() -> const std::vector<double> & { return controller->robot().encoderValues(); });
-    controller->logger().addLogEntry("realRobot_alpha", [controller]() -> const std::vector<double> & {
-      return controller->robot().encoderVelocities();
-    });
-  }
-
   // Performance measures
   controller->logger().addLogEntry("perf_GlobalRun", [this]() { return global_run_dt.count(); });
   controller->logger().addLogEntry("perf_ControllerRun", [this]() { return controller_run_dt.count(); });
@@ -1183,7 +1232,7 @@ void MCGlobalController::setup_log()
         return p.name;
       }
     }
-    mc_rtc::log::error_and_throw<std::runtime_error>(
+    mc_rtc::log::error_and_throw(
         "Impossible error, searched for a plugin name from a pointer to a plugin that was not loaded");
   };
   for(const auto & plugin : plugins_before_)

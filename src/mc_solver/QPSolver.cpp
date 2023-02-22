@@ -15,11 +15,6 @@
 
 #include <Tasks/Bounds.h>
 
-#include <RBDyn/EulerIntegration.h>
-#include <RBDyn/FA.h>
-#include <RBDyn/FK.h>
-#include <RBDyn/FV.h>
-
 namespace
 {
 
@@ -61,20 +56,20 @@ std::vector<mc_solver::ContactMsg> contactsMsgFromContacts(const mc_rbdyn::Robot
 
 namespace mc_solver
 {
-QPSolver::QPSolver(std::shared_ptr<mc_rbdyn::Robots> robots, double timeStep) : robots_p(robots), timeStep(timeStep)
+QPSolver::QPSolver(mc_rbdyn::RobotsPtr robots, double timeStep) : robots_p(robots), timeStep(timeStep)
 {
   if(timeStep <= 0)
   {
     mc_rtc::log::error_and_throw<std::invalid_argument>("timeStep has to be > 0! timeStep = {}", timeStep);
   }
-  realRobots_p = std::make_shared<mc_rbdyn::Robots>();
-  for(const auto & robot : robots->robots())
+  realRobots_p = mc_rbdyn::Robots::make();
+  for(const auto & robot : *robots)
   {
     realRobots_p->robotCopy(robot, robot.name());
   }
 }
 
-QPSolver::QPSolver(double timeStep) : QPSolver{std::make_shared<mc_rbdyn::Robots>(), timeStep} {}
+QPSolver::QPSolver(double timeStep) : QPSolver{mc_rbdyn::Robots::make(), timeStep} {}
 
 void QPSolver::addConstraintSet(ConstraintSet & cs)
 {
@@ -173,7 +168,7 @@ Eigen::VectorXd QPSolver::lambdaVec(int cIndex) const
   return solver.lambdaVec(cIndex);
 }
 
-void QPSolver::setContacts(const std::vector<mc_rbdyn::Contact> & contacts)
+void QPSolver::setContacts(ControllerToken, const std::vector<mc_rbdyn::Contact> & contacts)
 {
   if(logger_)
   {
@@ -194,7 +189,7 @@ void QPSolver::setContacts(const std::vector<mc_rbdyn::Contact> & contacts)
       const std::string & r1S = contact.r1Surface()->name();
       const std::string & r2 = robots().robot(contact.r2Index()).name();
       const std::string & r2S = contact.r2Surface()->name();
-      gui_->removeElement({"Contacts"}, fmt::format("{}::{}/{}::{}", r1, r1S, r2, r2S));
+      gui_->removeElement({"Contacts", "Forces"}, fmt::format("{}::{}/{}::{}", r1, r1S, r2, r2S));
     }
   }
   contacts_ = contacts;
@@ -226,29 +221,18 @@ void QPSolver::setContacts(const std::vector<mc_rbdyn::Contact> & contacts)
       const std::string & r1S = contact.r1Surface()->name();
       const std::string & r2 = robots().robot(contact.r2Index()).name();
       const std::string & r2S = contact.r2Surface()->name();
-      gui_->addElement({"Contacts"},
+      gui_->addElement({"Contacts", "Forces"},
                        mc_rtc::gui::Force(
                            fmt::format("{}::{}/{}::{}", r1, r1S, r2, r2S),
                            [this, &contact]() { return desiredContactForce(contact); },
                            [this, &contact]() {
-                             return robots().robots()[contact.r1Index()].surfacePose(contact.r1Surface()->name());
+                             return robots().robot(contact.r1Index()).surfacePose(contact.r1Surface()->name());
                            }));
     }
   }
   uniContacts.clear();
   biContacts.clear();
   qpRes.contacts.clear();
-
-  if(gui_)
-  {
-    gui_->removeCategory({"Contacts", "Remove"});
-  }
-  auto allBut = [](const std::vector<mc_rbdyn::Contact> & cs, const mc_rbdyn::Contact & c) {
-    std::vector<mc_rbdyn::Contact> ret = cs;
-    auto it = std::find(ret.begin(), ret.end(), c);
-    ret.erase(it);
-    return ret;
-  };
 
   for(const mc_rbdyn::Contact & c : contacts_)
   {
@@ -264,14 +248,6 @@ void QPSolver::setContacts(const std::vector<mc_rbdyn::Contact> & contacts)
       biContacts.push_back(tasks::qp::BilateralContact(*qcptr.bilateralContact));
       delete qcptr.bilateralContact;
       qcptr.bilateralContact = 0;
-    }
-    if(gui_)
-    {
-      std::string bName = robot(c.r1Index()).name() + "::" + c.r1Surface()->name() + " & " + robot(c.r2Index()).name()
-                          + "::" + c.r2Surface()->name();
-      auto nContacts = allBut(contacts_, c);
-      gui_->addElement({"Contacts", "Remove"},
-                       mc_rtc::gui::Button(bName, [nContacts, this]() { setContacts(nContacts); }));
     }
   }
 
@@ -313,13 +289,13 @@ const sva::ForceVecd QPSolver::desiredContactForce(const mc_rbdyn::Contact & con
     }
     else
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("QPSolver - cannot compute desired contact force for surface {}",
-                                                       contact.r1Surface()->name());
+      mc_rtc::log::error_and_throw("QPSolver - cannot compute desired contact force for surface {}",
+                                   contact.r1Surface()->name());
     }
   }
   else
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("QPSolver - cannot handle cases where qp_contact.first != -1");
+    mc_rtc::log::error_and_throw("QPSolver - cannot handle cases where qp_contact.first != -1");
   }
 }
 
@@ -338,7 +314,10 @@ bool QPSolver::run(FeedbackType fType)
       success = runJointsFeedback(true);
       break;
     case FeedbackType::ObservedRobots:
-      success = runClosedLoop();
+      success = runClosedLoop(true);
+      break;
+    case FeedbackType::ClosedLoopIntegrateReal:
+      success = runClosedLoop(false);
       break;
     default:
       mc_rtc::log::error("FeedbackType set to unknown value");
@@ -417,10 +396,13 @@ bool QPSolver::runJointsFeedback(bool wVelocity)
           continue;
         }
         auto jI = robot.jointIndexByName(jN);
-        robot.mbc().q[jI][0] = encoders[j];
-        if(wVelocity)
+        if(robot.mbc().q[jI].size() == 1)
         {
-          robot.mbc().alpha[jI][0] = encoders_alpha_[i][j];
+          robot.mbc().q[jI][0] = encoders[j];
+          if(wVelocity)
+          {
+            robot.mbc().alpha[jI][0] = encoders_alpha_[i][j];
+          }
         }
       }
       robot.forwardKinematics();
@@ -454,7 +436,7 @@ bool QPSolver::runJointsFeedback(bool wVelocity)
   return false;
 }
 
-bool QPSolver::runClosedLoop()
+bool QPSolver::runClosedLoop(bool integrateControlState)
 {
   if(control_q_.size() < robots().size())
   {
@@ -468,8 +450,11 @@ bool QPSolver::runClosedLoop()
     const auto & realRobot = realRobots().robot(i);
 
     // Save old integrator state
-    control_q_[i] = robot.mbc().q;
-    control_alpha_[i] = robot.mbc().alpha;
+    if(integrateControlState)
+    {
+      control_q_[i] = robot.mbc().q;
+      control_alpha_[i] = robot.mbc().alpha;
+    }
 
     // Set robot state from estimator
     robot.mbc().q = realRobot.mbc().q;
@@ -492,8 +477,11 @@ bool QPSolver::runClosedLoop()
     for(size_t i = 0; i < robots_p->mbs().size(); ++i)
     {
       auto & robot = robots().robot(i);
-      robot.mbc().q = control_q_[i];
-      robot.mbc().alpha = control_alpha_[i];
+      if(integrateControlState)
+      {
+        robot.mbc().q = control_q_[i];
+        robot.mbc().alpha = control_alpha_[i];
+      }
       if(robot.mb().nrDof() > 0)
       {
         solver.updateMbc(robot.mbc(), static_cast<int>(i));
@@ -515,9 +503,9 @@ const QPResultMsg & QPSolver::send(double /*curTime*/)
 
 void QPSolver::__fillResult()
 {
-  qpRes.zmps.resize(robots().robots().size());
-  qpRes.robots_state.resize(robots().robots().size());
-  for(unsigned int i = 0; i < robots().robots().size(); ++i)
+  qpRes.zmps.resize(robots().size());
+  qpRes.robots_state.resize(robots().size());
+  for(unsigned int i = 0; i < robots().size(); ++i)
   {
     const mc_rbdyn::Robot & robot = robots().robot(i);
     auto & q = qpRes.robots_state[i].q;
@@ -680,39 +668,6 @@ void QPSolver::gui(std::shared_ptr<mc_rtc::gui::StateBuilder> gui)
     {
       addTaskToGUI(t);
     }
-    gui_->addElement({"Contacts", "Add"},
-                     mc_rtc::gui::Form(
-                         "Add contact",
-                         [this](const mc_rtc::Configuration & data) {
-                           mc_rtc::log::info("Add contact {}::{}/{}::{}", data("R0"), data("R0 surface"), data("R1"),
-                                             data("R1 surface"));
-                           auto str2idx = [this](const std::string & rName) {
-                             for(const auto & r : robots())
-                             {
-                               if(r.name() == rName)
-                               {
-                                 return r.robotIndex();
-                               }
-                             }
-                             mc_rtc::log::error("The robot name you provided does not match any in the solver");
-                             return static_cast<unsigned int>(robots().size());
-                           };
-                           unsigned int r0Index = str2idx(data("R0"));
-                           unsigned int r1Index = str2idx(data("R1"));
-                           std::string r0Surface = data("R0 surface");
-                           std::string r1Surface = data("R1 surface");
-                           double friction = data("Friction", mc_rbdyn::Contact::defaultFriction);
-                           if(r0Index < robots().size() && r1Index < robots().size())
-                           {
-                             contacts_.push_back({robots(), r0Index, r1Index, r0Surface, r1Surface, friction});
-                             setContacts(contacts_);
-                           }
-                         },
-                         mc_rtc::gui::FormDataComboInput{"R0", true, {"robots"}},
-                         mc_rtc::gui::FormDataComboInput{"R0 surface", true, {"surfaces", "$R0"}},
-                         mc_rtc::gui::FormDataComboInput{"R1", true, {"robots"}},
-                         mc_rtc::gui::FormDataComboInput{"R1 surface", true, {"surfaces", "$R1"}},
-                         mc_rtc::gui::FormNumberInput("Friction", false, mc_rbdyn::Contact::defaultFriction)));
   }
 }
 

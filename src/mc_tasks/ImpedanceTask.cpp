@@ -21,7 +21,7 @@ ImpedanceTask::ImpedanceTask(const std::string & surfaceName,
                              unsigned int robotIndex,
                              double stiffness,
                              double weight)
-: SurfaceTransformTask(surfaceName, robots, robotIndex, stiffness, weight), lowPass_(0.005, 0.05)
+: SurfaceTransformTask(surfaceName, robots, robotIndex, stiffness, weight), lowPass_(0.005, cutoffPeriod_)
 {
   const auto & robot = robots.robot(robotIndex);
   type_ = "impedance";
@@ -29,15 +29,14 @@ ImpedanceTask::ImpedanceTask(const std::string & surfaceName,
 
   if(!robot.surfaceHasIndirectForceSensor(surfaceName))
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("[{}] Surface {} does not have a force sensor attached", name_,
-                                                     surfaceName);
+    mc_rtc::log::error_and_throw("[{}] Surface {} does not have a force sensor attached", name_, surfaceName);
   }
 }
 
 void ImpedanceTask::update(mc_solver::QPSolver & solver)
 {
   // 1. Filter the measured wrench
-  measuredWrench_ = robots.robot(rIndex).surfaceWrench(surfaceName);
+  measuredWrench_ = frame_->wrench();
   lowPass_.update(measuredWrench_);
   filteredMeasuredWrench_ = lowPass_.eval();
 
@@ -188,6 +187,7 @@ void ImpedanceTask::load(mc_solver::QPSolver & solver, const mc_rtc::Configurati
 void ImpedanceTask::addToSolver(mc_solver::QPSolver & solver)
 {
   lowPass_.dt(solver.dt());
+  cutoffPeriod(cutoffPeriod_);
   SurfaceTransformTask::addToSolver(solver);
 }
 

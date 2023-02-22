@@ -51,12 +51,12 @@ void init_socket(int & socket, int proto, const std::string & uri, const std::st
   socket = nn_socket(AF_SP, proto);
   if(socket < 0)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("Failed to initialize {}", name);
+    mc_rtc::log::error_and_throw("Failed to initialize {}", name);
   }
   int ret = nn_connect(socket, uri.c_str());
   if(ret < 0)
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("Failed to connect {} to uri: {}", name, uri);
+    mc_rtc::log::error_and_throw("Failed to connect {} to uri: {}", name, uri);
   }
   else
   {
@@ -67,7 +67,7 @@ void init_socket(int & socket, int proto, const std::string & uri, const std::st
     int err = nn_setsockopt(socket, NN_SUB, NN_SUB_SUBSCRIBE, "", 0);
     if(err < 0)
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("Failed to set subscribe option on SUB socket");
+      mc_rtc::log::error_and_throw("Failed to set subscribe option on SUB socket");
     }
   }
 }
@@ -392,6 +392,12 @@ void ControllerClient::handle_widget(const ElementId & id, const mc_rtc::Configu
       case Elements::Polygon:
         handle_polygon(id, data);
         break;
+      case Elements::PolyhedronTrianglesList:
+        handle_polyhedron_triangles_list(id, data);
+        break;
+      case Elements::PolyhedronVerticesTriangles:
+        handle_polyhedron_vertices_triangles(id, data);
+        break;
       case Elements::Force:
         handle_force(id, data);
         break;
@@ -448,6 +454,72 @@ void ControllerClient::default_impl(const std::string & type, const ElementId & 
 {
   mc_rtc::log::warning("This implementation of ControllerClient does not handle {} GUI needed by {}/{}", type,
                        cat2str(id.category), id.name);
+}
+
+void ControllerClient::polyhedron(const ElementId & id,
+                                  const std::vector<std::array<Eigen::Vector3d, 3>> & triangles,
+                                  const std::vector<std::array<mc_rtc::gui::Color, 3>> & colors,
+                                  const mc_rtc::gui::PolyhedronConfig & config)
+{
+  // The default other polyhedron implementation was called and this is also the default implementation, we are running
+  // in circle
+  if(default_polyhedron_vertices_triangles_)
+  {
+    default_impl("Polyhedron", id);
+    return;
+  }
+  // Otherwise we transform this call for the other implementation
+  default_polyhedron_triangles_list_ = true;
+  std::vector<Eigen::Vector3d> vertices;
+  vertices.reserve(3 * triangles.size());
+  std::vector<std::array<size_t, 3>> indices;
+  indices.reserve(triangles.size());
+  for(size_t i = 0; i < triangles.size(); ++i)
+  {
+    vertices.push_back(triangles[i][0]);
+    vertices.push_back(triangles[i][1]);
+    vertices.push_back(triangles[i][2]);
+    indices.push_back({3 * i, 3 * i + 1, 3 * i + 2});
+  }
+  std::vector<mc_rtc::gui::Color> vertices_colors;
+  vertices_colors.reserve(3 * colors.size());
+  for(const auto & c : colors)
+  {
+    vertices_colors.push_back(c[0]);
+    vertices_colors.push_back(c[1]);
+    vertices_colors.push_back(c[2]);
+  }
+  polyhedron(id, vertices, indices, vertices_colors, config);
+}
+
+void ControllerClient::polyhedron(const ElementId & id,
+                                  const std::vector<Eigen::Vector3d> & vertices,
+                                  const std::vector<std::array<size_t, 3>> & indices,
+                                  const std::vector<mc_rtc::gui::Color> & colors,
+                                  const mc_rtc::gui::PolyhedronConfig & config)
+{
+  // The default other polyhedron implementation was called and this is also the default implementation, we are running
+  // in circle
+  if(default_polyhedron_triangles_list_)
+  {
+    default_impl("Polyhedron", id);
+    return;
+  }
+  // Otherwise we transform this call for the other implementation
+  default_polyhedron_vertices_triangles_ = true;
+  std::vector<std::array<Eigen::Vector3d, 3>> triangles;
+  triangles.reserve(indices.size());
+  for(const auto & idx : indices)
+  {
+    triangles.push_back({vertices[idx[0]], vertices[idx[1]], vertices[idx[2]]});
+  }
+  std::vector<std::array<mc_rtc::gui::Color, 3>> triangle_colors;
+  triangle_colors.reserve(indices.size());
+  for(const auto & idx : indices)
+  {
+    triangle_colors.push_back({colors[idx[0]], colors[idx[1]], colors[idx[2]]});
+  }
+  polyhedron(id, triangles, triangle_colors, config);
 }
 
 void ControllerClient::handle_point3d(const ElementId & id, const mc_rtc::Configuration & data)
@@ -555,6 +627,98 @@ void ControllerClient::handle_polygon(const ElementId & id, const mc_rtc::Config
       exc.silence();
     }
   }
+}
+
+void ControllerClient::handle_polyhedron_triangles_list(const ElementId & id, const mc_rtc::Configuration & data_)
+{
+  mc_rtc::gui::PolyhedronConfig config(data_[4]);
+
+  std::vector<std::array<Eigen::Vector3d, 3>> triangles;
+  std::vector<std::array<mc_rtc::gui::Color, 3>> colors;
+  try
+  {
+    triangles = data_[3];
+  }
+  catch(mc_rtc::Configuration::Exception & exc)
+  {
+    mc_rtc::log::error(
+        "Could not deserialize polyhedron vertices, supported data is vector<std::array<Eigen::Vector3d, 3>>");
+    mc_rtc::log::error(exc.what());
+    exc.silence();
+    return;
+  }
+  if(data_.size() > 5)
+  {
+    try
+    {
+      colors = data_[5];
+    }
+    catch(mc_rtc::Configuration::Exception & exc)
+    {
+      mc_rtc::log::error(
+          "Could not deserialize polyhedron colors, supported data is vector<std::array<mc_rtc::gui::Color,3>>");
+      mc_rtc::log::error(exc.what());
+      exc.silence();
+    }
+    if(colors.size() != 0 && colors.size() != triangles.size())
+    {
+      mc_rtc::log::error("{}/{} is not providing enough color data (expected: {}, got: {})", cat2str(id.category),
+                         id.name, triangles.size(), colors.size());
+      return;
+    }
+  }
+  polyhedron(id, triangles, colors, config);
+}
+
+void ControllerClient::handle_polyhedron_vertices_triangles(const ElementId & id, const mc_rtc::Configuration & data_)
+{
+  mc_rtc::gui::PolyhedronConfig config(data_[5]);
+
+  std::vector<Eigen::Vector3d> vertices;
+  try
+  {
+    vertices = data_[3];
+  }
+  catch(mc_rtc::Configuration::Exception & exc)
+  {
+    mc_rtc::log::error("Could not deserialize polyhedron vertices, expecting a list of vertices");
+    mc_rtc::log::error(exc.what());
+    exc.silence();
+    return;
+  }
+  std::vector<std::array<size_t, 3>> indices;
+  try
+  {
+    indices = data_[4];
+  }
+  catch(mc_rtc::Configuration::Exception & exc)
+  {
+    mc_rtc::log::error("Could not deserialize polyhedron triangles, expecting a list of indices");
+    mc_rtc::log::error(exc.what());
+    exc.silence();
+    return;
+  }
+  std::vector<mc_rtc::gui::Color> colors;
+  if(data_.size() > 6)
+  {
+    try
+    {
+      colors = data_[6];
+    }
+    catch(mc_rtc::Configuration::Exception & exc)
+    {
+      mc_rtc::log::error("Could not deserialize polyhedron colors, supported data is std::vector<mc_rtc::gui::Color>");
+      mc_rtc::log::error(exc.what());
+      exc.silence();
+    }
+    if(colors.size() != 0 && colors.size() != vertices.size())
+    {
+      mc_rtc::log::error("{}/{} is not providing enough color data (expected: {}, got: {})", cat2str(id.category),
+                         id.name, vertices.size(), colors.size());
+      return;
+    }
+  }
+  polyhedron(id, vertices, indices, colors, config);
 }
 
 void ControllerClient::handle_force(const ElementId & id, const mc_rtc::Configuration & data)
@@ -732,19 +896,19 @@ namespace
 struct X
 {
   mc_rtc::gui::plot::AxisConfiguration config;
-  double value;
+  std::vector<double> values;
 
   X(const mc_rtc::Configuration & data)
   {
     config.fromMessagePack(data[0]);
-    value = data[1];
+    values = data[1];
   }
 };
 
 struct Y
 {
   std::string legend;
-  double value;
+  std::vector<double> values;
   mc_rtc::gui::Color color;
   mc_rtc::gui::plot::Style style;
   mc_rtc::gui::plot::Side side;
@@ -752,7 +916,7 @@ struct Y
   Y(const mc_rtc::Configuration & data)
   {
     legend = static_cast<std::string>(data[1]);
-    value = data[2];
+    values = data[2];
     color.fromMessagePack(data[3]);
     style = static_cast<mc_rtc::gui::plot::Style>(static_cast<uint64_t>(data[4]));
     side = static_cast<mc_rtc::gui::plot::Side>(static_cast<uint64_t>(data[5]));
@@ -762,8 +926,7 @@ struct Y
 struct XY
 {
   std::string legend;
-  double x;
-  double y;
+  std::vector<std::array<double, 2>> values;
   mc_rtc::gui::Color color;
   mc_rtc::gui::plot::Style style;
   mc_rtc::gui::plot::Side side;
@@ -771,11 +934,10 @@ struct XY
   XY(const mc_rtc::Configuration & data)
   {
     legend = static_cast<std::string>(data[1]);
-    x = data[2];
-    y = data[3];
-    color.fromMessagePack(data[4]);
-    style = static_cast<mc_rtc::gui::plot::Style>(static_cast<uint64_t>(data[5]));
-    side = static_cast<mc_rtc::gui::plot::Side>(static_cast<uint64_t>(data[6]));
+    values = data[2];
+    color.fromMessagePack(data[3]);
+    style = static_cast<mc_rtc::gui::plot::Style>(static_cast<uint64_t>(data[4]));
+    side = static_cast<mc_rtc::gui::plot::Side>(static_cast<uint64_t>(data[5]));
   }
 };
 
@@ -834,12 +996,23 @@ void ControllerClient::handle_standard_plot(const mc_rtc::Configuration & plot)
     if(type == Type::Ordinate)
     {
       Y y(y_);
-      plot_point(id, i - 6, y.legend, x.value, y.value, y.color, y.style, y.side);
+      if(x.values.size() < y.values.size())
+      {
+        mc_rtc::log::error("[Plot::{}] Not enough X data compared to Y data", title);
+      }
+      size_t x_0 = y.values.size() - x.values.size();
+      for(size_t j = 0; j < y.values.size(); ++j)
+      {
+        plot_point(id, i - 6, y.legend, x.values[x_0 + j], y.values[j], y.color, y.style, y.side);
+      }
     }
     else if(type == Type::AbscissaOrdinate)
     {
       XY xy(y_);
-      plot_point(id, i - 6, xy.legend, xy.x, xy.y, xy.color, xy.style, xy.side);
+      for(const auto & v : xy.values)
+      {
+        plot_point(id, i - 6, xy.legend, v[0], v[1], xy.color, xy.style, xy.side);
+      }
     }
     else if(type == Type::Polygon)
     {
@@ -882,7 +1055,10 @@ void ControllerClient::handle_xy_plot(const mc_rtc::Configuration & plot)
     if(type == Type::AbscissaOrdinate)
     {
       XY xy(y_);
-      plot_point(id, i - 6, xy.legend, xy.x, xy.y, xy.color, xy.style, xy.side);
+      for(const auto & v : xy.values)
+      {
+        plot_point(id, i - 6, xy.legend, v[0], v[1], xy.color, xy.style, xy.side);
+      }
     }
     else if(type == Type::Polygon)
     {

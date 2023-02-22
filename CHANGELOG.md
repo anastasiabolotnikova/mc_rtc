@@ -2,6 +2,187 @@
 
 ## [Unreleased]
 
+## [1.13.0] - 2022-10-16
+
+### Changes
+
+- [general] mc_rtc now uses C++17 (#297)
+
+### Added
+
+- [mc_control] Publish joint sensors in ROS (#293)
+- [mc_rbdyn] Add a non throwing version of ZMP computations (#292)
+- [mc_rbdyn] Add const accessor for grippers (#298)
+- [mc_rtc] Add gui::Polyhedron element (#296)
+- [mc_tasks] DCM derivative gains are now 2D (#295)
+
+### Fixes
+
+- [mc_control] Fix gripper initialization issue (#291)
+- [mc_control] Fix assumption around robot.hasJoint
+- [mc_tasks] Set roll and pitch target of torso to 0 in StabilizerTask (#175)
+- [mc_tasks] Fix foot force difference control issue in StabilizerTask (#290)
+
+## [1.12.0] - 2022-09-07
+
+### Changes
+
+- [mc_control] GUI can be accessed from a const controller (#282)
+
+### Added
+
+- [mc_control] Add `EnableController` callback in Datastore and the EnableController state (#278)
+- [mc_control] Add `JointSensor` and related interfaces (#279)
+- [mc_rbdyn] Load compound joints description from RobotModule yaml/json files (#273)
+- [mc_solver] Allow to specify compound joint constraints outside of the RobotModule (#273)
+- [mc_tasks] Datastore calls to set external wrenches for the stabilizer and set the CoP admittance gains (#276)
+
+### Fixes
+
+- [general] Fix build for fmt >= 0.9.0 and Python >= 3.9
+- [mc_control] Fixes oberved state on controller switch (#276)
+- [mc_control] Fixes about initialization of the robot attitude when specified in the controller (#275/#286)
+- [mc_log_ui] Fixes animations on right side in Python 3
+- [mc_log_ui] Fix a bug when NaN values are explicitly logged
+- [mc_log_ui] Avoid failed imports in headless environments
+- [mc_tasks] Do not filter the feedforward velocity in admittance tasks (#261)
+- [mc_tasks] Reset of StabilizerTask when already active (#276)
+- [mc_tasks] Fix a stabilizer issue when standing far from the origin (#285)
+
+## [1.11.0] - 2022-07-08
+
+### Highlights
+
+`mc_rbdyn::Frame` and `mc_rbdyn::RobotFrame` have been introduced. This removes
+the unnecessary distinction between bodies and surfaces that has existed in the
+framework. (#247)
+
+### API breaks
+
+- `mc_rbdyn::Robots` cannot be created directly anymore, one has to go through
+   a factory function (#247)
+- `mc_rbdyn::Robots` stores indiviual robot as pointer and in particular
+  `robots.robots()` returns a self reference instead of `vector<Robot>`,
+  `Robots` behaves a little more like a vector now to mitigate the impact of this
+  change (#247)
+- `EndEffectorTask` and co. cannot use a `bodyPoint` in their constructor anymore, proper frames should be used instead (#247)
+- `VectorOrientationTask` and co. cannot set or get the `bodyVector` after the fact anymore (#247)
+
+### Deprecations
+
+- Usage of `body` or `surface` in JSON/YAML is deprecated in favor of frame,
+  the doc will only show `frame` but it should continue to work with all old
+  JSON/YAML files (#247)
+- Idem for specifications of relative targets (#247)
+
+### Changes
+
+- [mc_control] Many functionalities of FSM controllers -- notably simplified contact and collision manipulations and configuration based initialization -- are now available in basic controllers (#250)
+
+### Added
+
+- [mc_control] Controllers can specify extra frames in their configuration frame (#251)
+- [mc_control] Controllers can specify different `init_pos` for different `MainRobot` (#251)
+- [mc_rbdyn] Add an overload to load a robot module with a custom name
+- [mc_rtc_utils] `mc_rtc::shared` is a wrapper around `std::enabled_shared_from_this` to allow
+  reference-style API where the data is backed by a shared pointer (#247)
+- [mc_tasks] All tasks (when it makes sense) can accept a frame at construction (#247)
+- [mc_solver] `mc_solver::BoundedSpeedConstr` can be used to constraint a frame velocity (#247)
+- [mc_solver] Active joints in a collision can be specified via `mc_rbdyn::Collision` objects (#262)
+- [utils] `build_and_install` now supports Ubuntu Jammy (22.04) (#248)
+- [utils] `build_and_install` can now install the Panda module (#249)
+
+### Fixes
+
+- [debian] Python bindings now include mc_observers
+- [fsm::Meta] Fix missed iterations at the start of meta states (#257)
+- [mc_control] Make robot position initialization consistant (#245)
+- [mc_rbdyn] Fix initialization of the default body sensor (#258)
+- [utils] Fix issues with pip/pip3 on Ubuntu Focal (#246)
+- [utils] Honor forced selection of Python for mc_log_ui
+
+## [1.10.0] - 2022-04-06
+
+### Tutorials translation
+
+mc_rtc website and tutorials are now available in [Japanese](https://jrl-umi3218.github.io/mc_rtc/jp/) (#225/#231)
+
+### Removed
+
+- mc_rbdyn_urdf is no longer used by mc_rtc, all related APIs that were deprecated have been removed in this release (#243)
+
+### Added
+
+- [mc_tasks/Stabilizer] Add CoM correction using bias estimation (#227)
+- [mc_rtc] A source can be provided when adding GUI elements to simplify cleanup code (#237)
+- [mc_solver] Added `FeedbackType::ClosedLoopIntegrateReal` (#240)
+- [bindings] RPY utils are now available in mc_rbdyn bindings (#236)
+
+### Changes
+
+- [mc_control] Improve handling of metric grippers
+- [mc_control] `mc_control::fsm::State::configure` now has a reasonable default implementation based on existing practice (#238)
+- [mc_control] Data is now logged for all active robots in the controller automatically (#241)
+- [mc_rtc] `log_error_and_throw` now defaults to `std::runtime_error` and includes a stacktrace (#224)
+
+### Fixes
+
+- [mc_control] `env/ground` is used as the new default environment module
+- [mc_rbdyn] Normalize the rotation provided to `posW` for fixed base robots
+- [mc_rbdyn] `RobotModule::init(rbd::parsers::ParserResult)` does not overwrite the reference joint order if it was already provided
+- [mc_rbdyn] `RobotModule::expand_stance` does not include the `Root` joint
+- [mc_tasks] Align posture task gains' GUI with other tasks
+- [mc_tasks] Avoid cutoff period overwrite in impedance tasks (#227)
+- [mc_tasks] Conserve `dimWeight` value when joints' selection is changed
+- [ROS] Ensure all published quaternions are normalized (#242)
+
+## [1.9.0] - 2022-02-10
+
+### New build tool
+
+- Introduce [mc-rtc-superbuild](https://github.com/mc-rtc/mc-rtc-superbuild) a new tool to replaced the build_and_install script
+  - See #221 for a list of benefits of mc-rtc-superbuild over build_and_install
+  - build_and_install will be maintained and should keep working for a while but new users are advised to use the superbuild tool instead
+  - You can start using mc-rtc-superbuild if you are using build_and_install already but this will require a full rebuild
+
+### Changes
+
+- hpp-spline has been dropped in favor of the actively maintained [ndcurves](https://github.com/loco-3d/ndcurves) (#210)
+- Ubuntu Xenial (16.04) is no longer actively supported
+- [mc_control] Allow plugin loaded at the controller level (#198)
+  - See the global plugins tutorial for caveats and details regarding configuration
+- [mc_control_fsm] A state final name is now correctly state when it enters `::configure` for the first time (#218)
+- [mc_log_ui] Autoscaling has been improved (#222)
+- [mc_rbdyn/mc_control_fsm] Contacts now compare equal regardless of the robots' order (i.e. `r1::s1/r2::s2 == r2::s2/r1::s1`) (#202)
+- [mc_rtc] YAML improvments (#208/#213)
+  - Allow to use the merge key from YAML 1.1
+  - Disable y/n and yes/no bool conversion
+- [mc_rtc] ObjectLoader sandboxing has been removed (#217)
+
+### Fixes
+
+- [build_and_install] Fix permissions issues on ninja logs
+- [cmake] Handle building on aarch64 (#217)
+- [cmake] Honor GNUInstallDirs (#217)
+- [mc_control] Fix crash on controller restart/reset (#206)
+- [mc_control] Fix issues with `removeRobot` (#207)
+- [mc_log_ui] Fix many functionalities when running in Python 3 (#222)
+- [mc_rbdyn] Fix stabilizer configuration loading (#206)
+- [mc_solver] Automatically swap contact order if the first robot has no dof (#202)
+- [mc_tasks] Correct name setting for `EndEffectorTask`
+
+### Added
+
+- [GUI] Forms can now have dynamic elements (#197)
+- [GUI] New plots can be added to a plot after it has been added (#197)
+- [mc_bin_utils/mc_log_ui] It is now possible to extract some keys from a log (#209)
+- [mc_control] Added a multi-robot aware init method for `mc_control::MCGlobalController` (#206)
+- [mc_control] Added a reset method for `mc_control::MCGlobalController` (#206)
+- [mc_control] alphaOut (command velocity) and alphaDOut (command acceleration) are now logged by default (#222)
+- [mc_control_fsm] API have been added to allow writing FSM tools (#222)
+- [mc_rtc] Added `mc_rtc::ConfigurationFile` to simplify save/reload of configuration files (#222)
+- [mc_tasks] MetaTask now has an `iterInSolver` method (#200)
+
 ## [1.8.2] - 2021-10-15
 
 ### New package
@@ -344,7 +525,12 @@
 
 Initial release
 
-[Unreleased]: https://github.com/jrl-umi3218/mc_rtc/compare/v1.8.2...HEAD
+[Unreleased]: https://github.com/jrl-umi3218/mc_rtc/compare/v1.13.0...HEAD
+[1.13.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.13.0
+[1.12.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.12.0
+[1.11.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.11.0
+[1.10.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.10.0
+[1.9.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.9.0
 [1.8.2]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.8.2
 [1.8.1]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.8.1
 [1.8.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.8.0

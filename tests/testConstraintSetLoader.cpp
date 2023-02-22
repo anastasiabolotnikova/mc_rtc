@@ -11,6 +11,10 @@
 #include <mc_solver/ContactConstraint.h>
 #include <mc_solver/DynamicsConstraint.h>
 
+#include <boost/filesystem.hpp>
+#include <boost/filesystem/operations.hpp>
+namespace bfs = boost::filesystem;
+
 #include <boost/mpl/list.hpp>
 #include <boost/test/unit_test.hpp>
 
@@ -88,12 +92,6 @@ struct ConstraintTester<mc_solver::BoundedSpeedConstr>
       c.add("upperSpeed", lS);
       cs.push(c);
     }
-    {
-      // No speed entry so shouldn't matter
-      mc_rtc::Configuration c;
-      c.add("body", "R_WRIST_Y_S");
-      cs.push(c);
-    }
     auto ret = getTmpFile();
     config.save(ret);
     return ret;
@@ -110,9 +108,9 @@ struct ConstraintTester<mc_solver::BoundedSpeedConstr>
     BOOST_CHECK(loaded->removeBoundedSpeed(solver, "L_WRIST_Y_S"));
   }
 
-  Eigen::Vector3d s = Eigen::Vector3d::Random();
-  Eigen::Vector3d lS = Eigen::Vector3d::Random();
-  Eigen::Vector3d uS = Eigen::Vector3d::Zero();
+  Eigen::Vector6d s = Eigen::Vector6d::Random();
+  Eigen::Vector6d lS = Eigen::Vector6d::Random();
+  Eigen::Vector6d uS = Eigen::Vector6d::Zero();
 };
 
 template<>
@@ -283,4 +281,5 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(TestConstraintSetLoader, T, test_types)
   auto conf = tester.json();
   auto loaded = mc_solver::ConstraintSetLoader::load(solver, conf);
   tester.check(ref, loaded);
+  bfs::remove(conf);
 }

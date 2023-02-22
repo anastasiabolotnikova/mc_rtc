@@ -24,10 +24,10 @@ public:
   TestObserverController(std::shared_ptr<mc_rbdyn::RobotModule> rm, double dt) : MCController(rm, dt)
   {
     // Check that the default constructor loads the robot + ground environment
-    BOOST_CHECK_EQUAL(robots().robots().size(), 2);
+    BOOST_CHECK_EQUAL(robots().size(), 2);
     // Load an additional main robot for the second pipeline
     loadRobot(rm, "jvrc1_2");
-    BOOST_CHECK_EQUAL(robots().robots().size(), 3);
+    BOOST_CHECK_EQUAL(robots().size(), 3);
     // Check that JVRC-1 was loaded
     BOOST_CHECK_EQUAL(robot().name(), "jvrc1");
     solver().addConstraintSet(contactConstraint);
@@ -56,13 +56,15 @@ public:
 
     auto checkPose = [](const std::string & prefix, const sva::PTransformd & expected,
                         const sva::PTransformd & actual) {
-      BOOST_CHECK_MESSAGE(allclose(expected.rotation(), actual.rotation(), 1e-6),
-                          fmt::format("{} expected orientation [{}] but got [{}]", prefix,
-                                      mc_rbdyn::rpyFromMat(expected.rotation()).transpose().format(Eigen::IOFormat(4)),
-                                      mc_rbdyn::rpyFromMat(actual.rotation()).transpose().format(Eigen::IOFormat(4))));
+      BOOST_CHECK_MESSAGE(
+          allclose(expected.rotation(), actual.rotation(), 1e-6),
+          fmt::format("{} expected orientation [{}] but got [{}]", prefix,
+                      MC_FMT_STREAMED(mc_rbdyn::rpyFromMat(expected.rotation()).transpose().format(Eigen::IOFormat(4))),
+                      MC_FMT_STREAMED(mc_rbdyn::rpyFromMat(actual.rotation()).transpose().format(Eigen::IOFormat(4)))));
       BOOST_CHECK_MESSAGE(allclose(expected.translation(), actual.translation(), 1e-6),
                           fmt::format("{} expected position [{}] but got [{}]", prefix,
-                                      expected.translation().transpose(), actual.translation().transpose()));
+                                      MC_FMT_STREAMED(expected.translation().transpose()),
+                                      MC_FMT_STREAMED(actual.translation().transpose())));
     };
 
     // Check that the estimation from the KinematicInertial observers matches the
@@ -79,7 +81,7 @@ public:
     // Check that the second pipeline BodySensor observer works as expected
     checkPose("Second pipeline", robot().posW(), realRobot("jvrc1_2").posW());
 
-    for(const auto joint : robot().refJointOrder())
+    for(const auto & joint : robot().refJointOrder())
     {
       auto j = robot().jointIndexByName(joint);
       BOOST_CHECK_CLOSE(robot().mbc().q[j][0], realRobot().mbc().q[j][0], 1e-6);

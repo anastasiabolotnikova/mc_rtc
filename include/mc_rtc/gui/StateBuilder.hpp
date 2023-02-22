@@ -19,20 +19,36 @@ void StateBuilder::addElement(const std::vector<std::string> & category, T eleme
   addElement(category, ElementsStacking::Vertical, element);
 }
 
-template<typename T>
-void StateBuilder::addElement(const std::vector<std::string> & category, ElementsStacking stacking, T element)
+template<typename SourceT, typename T>
+void StateBuilder::addElement(SourceT * source, const std::vector<std::string> & category, T element)
 {
-  addElementImpl(category, stacking, element);
+  addElement(source, category, ElementsStacking::Vertical, element);
 }
 
 template<typename T>
-void StateBuilder::addElementImpl(const std::vector<std::string> & category,
+void StateBuilder::addElement(const std::vector<std::string> & category, ElementsStacking stacking, T element)
+{
+  addElementImpl(nullptr, category, stacking, element);
+}
+
+template<typename SourceT, typename T>
+void StateBuilder::addElement(SourceT * source,
+                              const std::vector<std::string> & category,
+                              ElementsStacking stacking,
+                              T element)
+{
+  addElementImpl(source, category, stacking, element);
+}
+
+template<typename T>
+void StateBuilder::addElementImpl(void * source,
+                                  const std::vector<std::string> & category,
                                   ElementsStacking stacking,
                                   T element,
                                   size_t rem)
 {
   static_assert(std::is_base_of<Element, T>::value, "You can only add elements that derive from the Element class");
-  Category & cat = getCategory(category);
+  Category & cat = getOrCreateCategory(category);
   auto it = std::find_if(cat.elements.begin(), cat.elements.end(),
                          [&element](const ElementStore & el) { return el().name() == element.name(); });
   if(it != cat.elements.end())
@@ -41,7 +57,7 @@ void StateBuilder::addElementImpl(const std::vector<std::string> & category,
     log::warning("Discarding request to add this element");
     return;
   }
-  cat.elements.emplace_back(element, cat, stacking);
+  cat.elements.emplace_back(element, cat, stacking, source);
   if(rem == 0)
   {
     cat.id += 1;
@@ -54,6 +70,12 @@ void StateBuilder::addElement(const std::vector<std::string> & category, T eleme
   addElement(category, ElementsStacking::Vertical, element, args...);
 }
 
+template<typename SourceT, typename T, typename... Args>
+void StateBuilder::addElement(SourceT * source, const std::vector<std::string> & category, T element, Args... args)
+{
+  addElement(source, category, ElementsStacking::Vertical, element, args...);
+}
+
 template<typename T, typename... Args>
 void StateBuilder::addElement(const std::vector<std::string> & category,
                               ElementsStacking stacking,
@@ -61,12 +83,24 @@ void StateBuilder::addElement(const std::vector<std::string> & category,
                               Args... args)
 {
   size_t rem = stacking == ElementsStacking::Vertical ? 0 : sizeof...(args);
-  addElementImpl(category, stacking, element, rem);
+  addElementImpl(nullptr, category, stacking, element, rem);
+  addElement(category, stacking, args...);
+}
+
+template<typename SourceT, typename T, typename... Args>
+void StateBuilder::addElement(SourceT * source,
+                              const std::vector<std::string> & category,
+                              ElementsStacking stacking,
+                              T element,
+                              Args... args)
+{
+  size_t rem = stacking == ElementsStacking::Vertical ? 0 : sizeof...(args);
+  addElementImpl(source, category, stacking, element, rem);
   addElement(category, stacking, args...);
 }
 
 template<typename T>
-StateBuilder::ElementStore::ElementStore(T self, const Category & category, ElementsStacking stacking)
+StateBuilder::ElementStore::ElementStore(T self, const Category & category, ElementsStacking stacking, void * source)
 {
   self.id(category.id);
   // FIXME In C++14 we could have T && self and move it into the lambda
@@ -97,6 +131,7 @@ StateBuilder::ElementStore::ElementStore(T self, const Category & category, Elem
     T & el_ = static_cast<T &>(el);
     return el_.handleRequest(data);
   };
+  this->source = source;
 }
 
 template<typename... Args>
@@ -138,7 +173,11 @@ void StateBuilder::addXYPlot(const std::string & name,
   uint64_t sz = 6;
   uint64_t id = ++plot_id_;
   plot_callback_function_t cb = [id, sz, xConfig, yLeftConfig, yRightConfig](mc_rtc::MessagePackBuilder & builder,
-                                                                             const std::string & name) {
+                                                                             const std::string & name, bool update) {
+    if(update)
+    {
+      return;
+    }
     builder.write(static_cast<uint64_t>(plot::Plot::XY));
     builder.write(id);
     builder.write(name);
@@ -181,10 +220,16 @@ void StateBuilder::addPlot(const std::string & name,
   uint64_t sz = 6;
   uint64_t id = ++plot_id_;
   plot_callback_function_t cb = [abscissa, id, sz, yLeftConfig, yRightConfig](mc_rtc::MessagePackBuilder & builder,
-                                                                              const std::string & name) {
+                                                                              const std::string & name, bool update) {
+    if(update)
+    {
+      abscissa.update();
+      return;
+    }
     builder.write(static_cast<uint64_t>(plot::Plot::Standard));
     builder.write(id);
     builder.write(name);
+    abscissa.update();
     abscissa.write(builder);
     yLeftConfig.write(builder);
     yRightConfig.write(builder);
@@ -198,8 +243,14 @@ void StateBuilder::addPlotData(PlotCallback & callback, T plot, Args... args)
 {
   callback.msg_size += 1;
   auto prev_callback = callback.callback;
-  callback.callback = [prev_callback, plot](mc_rtc::MessagePackBuilder & builder, const std::string & name) {
-    prev_callback(builder, name);
+  callback.callback = [prev_callback, plot](mc_rtc::MessagePackBuilder & builder, const std::string & name,
+                                            bool update) {
+    prev_callback(builder, name, update);
+    plot.update();
+    if(update)
+    {
+      return;
+    }
     plot.write(builder);
   };
   addPlotData(callback, args...);

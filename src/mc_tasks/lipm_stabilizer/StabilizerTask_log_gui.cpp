@@ -58,11 +58,14 @@ void StabilizerTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
             dfzDamping(a(1));
           }),
       ArrayInput(
-          "DCM gains", {"Prop.", "Integral", "Deriv."},
-          [this]() -> Eigen::Vector3d {
-            return {c_.dcmPropGain, c_.dcmIntegralGain, c_.dcmDerivGain};
-          },
-          [this](const Eigen::Vector3d & gains) { dcmGains(gains(0), gains(1), gains(2)); }),
+          "DCM P gains", {"x", "y"}, [this]() -> const Eigen::Vector2d & { return c_.dcmPropGain; },
+          [this](const Eigen::Vector2d & gains) { dcmGains(gains, c_.dcmIntegralGain, c_.dcmDerivGain); }),
+      ArrayInput(
+          "DCM I gains", {"x", "y"}, [this]() -> const Eigen::Vector2d & { return c_.dcmIntegralGain; },
+          [this](const Eigen::Vector2d & gains) { dcmGains(c_.dcmPropGain, gains, c_.dcmDerivGain); }),
+      ArrayInput(
+          "DCM D gains", {"x", "y"}, [this]() -> const Eigen::Vector2d & { return c_.dcmDerivGain; },
+          [this](const Eigen::Vector2d & gains) { dcmGains(c_.dcmPropGain, c_.dcmIntegralGain, gains); }),
       NumberInput(
           "CoMd Error gain", [this]() { return c_.comdErrorGain; }, [this](double a) { c_.comdErrorGain = a; }),
       NumberInput(
@@ -70,11 +73,11 @@ void StabilizerTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
       ArrayInput(
           "DCM filters", {"Integrator T [s]", "Derivator T [s]"},
           [this]() -> Eigen::Vector2d {
-            return {dcmIntegrator_.timeConstant(), dcmDerivator_.timeConstant()};
+            return {dcmIntegrator_.timeConstant(), dcmDerivator_.cutoffPeriod()};
           },
           [this](const Eigen::Vector2d & T) {
             dcmIntegratorTimeConstant(T(0));
-            dcmDerivatorTimeConstant(T(1));
+            dcmDerivatorCutoffPeriod(T(1));
           }));
   gui.addElement({"Tasks", name_, "Advanced"}, Button("Disable", [this]() { disable(); }));
   addConfigButtons({"Tasks", name_, "Advanced"});
@@ -118,6 +121,9 @@ void StabilizerTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
                      "Enabled", [this]() { return c_.dcmBias.withDCMBias; },
                      [this]() { c_.dcmBias.withDCMBias = !c_.dcmBias.withDCMBias; }),
                  Checkbox(
+                     "Correct CoM Pos", [this]() { return c_.dcmBias.correctCoMPos; },
+                     [this]() { c_.dcmBias.correctCoMPos = !c_.dcmBias.correctCoMPos; }),
+                 Checkbox(
                      "Use Filtered DCM", [this]() { return c_.dcmBias.withDCMFilter; },
                      [this]() { c_.dcmBias.withDCMFilter = !c_.dcmBias.withDCMFilter; }));
   gui.addElement({"Tasks", name_, "Advanced", "DCM Bias"},
@@ -146,6 +152,10 @@ void StabilizerTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
                        c_.dcmBias.biasLimit = v;
                        dcmEstimator_.setBiasLimit(v);
                      }),
+                 ArrayInput(
+                     "CoM bias Limit [m]", {"sagital", "lateral"},
+                     [this]() -> const Eigen::Vector2d & { return c_.dcmBias.comBiasLimit; },
+                     [this](const Eigen::Vector2d & v) { c_.dcmBias.comBiasLimit = v; }),
                  ArrayLabel("Local Bias", [this]() { return dcmEstimator_.getLocalBias(); }));
   gui.addElement({"Tasks", name_, "Advanced", "Ext Wrench"},
                  Checkbox(
@@ -386,11 +396,16 @@ void StabilizerTask::addToLogger(mc_rtc::Logger & logger)
   logger.addLogEntry(name_ + "_admittance_cop", this, [this]() -> const Eigen::Vector2d & { return c_.copAdmittance; });
   logger.addLogEntry(name_ + "_admittance_dfz", this, [this]() { return c_.dfzAdmittance; });
   logger.addLogEntry(name_ + "_dcmDerivator_filtered", this, [this]() { return dcmDerivator_.eval(); });
-  logger.addLogEntry(name_ + "_dcmDerivator_timeConstant", this, [this]() { return dcmDerivator_.timeConstant(); });
+  logger.addLogEntry(name_ + "_dcmDerivator_input_lp", this, [this]() { return dcmDerivator_.input_lp(); });
+  logger.addLogEntry(name_ + "_dcmDerivator_input_hp", this, [this]() { return dcmDerivator_.input_hp(); });
+  logger.addLogEntry(name_ + "_dcmDerivator_cutoffPeriod", this, [this]() { return dcmDerivator_.cutoffPeriod(); });
   logger.addLogEntry(name_ + "_dcmIntegrator_timeConstant", this, [this]() { return dcmIntegrator_.timeConstant(); });
-  logger.addLogEntry(name_ + "_dcmTracking_derivGain", this, [this]() { return c_.dcmDerivGain; });
-  logger.addLogEntry(name_ + "_dcmTracking_integralGain", this, [this]() { return c_.dcmIntegralGain; });
-  logger.addLogEntry(name_ + "_dcmTracking_propGain", this, [this]() { return c_.dcmPropGain; });
+  logger.addLogEntry(name_ + "_dcmTracking_derivGain", this,
+                     [this]() -> const Eigen::Vector2d & { return c_.dcmDerivGain; });
+  logger.addLogEntry(name_ + "_dcmTracking_integralGain", this,
+                     [this]() -> const Eigen::Vector2d & { return c_.dcmIntegralGain; });
+  logger.addLogEntry(name_ + "_dcmTracking_propGain", this,
+                     [this]() -> const Eigen::Vector2d & { return c_.dcmPropGain; });
   logger.addLogEntry(name_ + "_dcmTracking_comdErrorGain", this, [this]() { return c_.comdErrorGain; });
   logger.addLogEntry(name_ + "_dcmTracking_zmpdGain", this, [this]() { return c_.zmpdGain; });
   logger.addLogEntry(name_ + "_dcmBias_dcmMeasureErrorStd", this, [this]() { return c_.dcmBias.dcmMeasureErrorStd; });
@@ -462,8 +477,10 @@ void StabilizerTask::addToLogger(mc_rtc::Logger & logger)
                      [this]() { return realRobot().surfacePose(footSurface(ContactState::Right)); });
   MC_RTC_LOG_HELPER(name_ + "_realRobot_com", measuredCoM_);
   MC_RTC_LOG_HELPER(name_ + "_realRobot_comd", measuredCoMd_);
+  MC_RTC_LOG_HELPER(name_ + "_realRobot_comdd", measuredCoMdd_);
   MC_RTC_LOG_HELPER(name_ + "_realRobot_dcm", measuredDCM_);
   MC_RTC_LOG_HELPER(name_ + "_realRobot_dcm_unbiased", measuredDCMUnbiased_);
+  MC_RTC_LOG_HELPER(name_ + "_realRobot_com_unbiased", measuredCoMUnbiased_);
   logger.addLogEntry(name_ + "_realRobot_posW", this,
                      [this]() -> const sva::PTransformd & { return realRobot().posW(); });
   logger.addLogEntry(name_ + "_realRobot_wrench", this,

@@ -16,7 +16,11 @@ import matplotlib
 matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
 import numpy as np
-matplotlib.use('Qt5Agg')
+# This might fail if mc_log_ui is imported in a headless environment
+try:
+  matplotlib.use('Qt5Agg')
+except:
+  pass
 import matplotlib.pyplot
 
 from matplotlib.animation import FuncAnimation
@@ -50,7 +54,7 @@ class GenerateRangeDialog(QtWidgets.QDialog):
     self.setWindowTitle("Generate time-range(s) based on data range")
     self.data = parent.data
     self.selectedData = QtWidgets.QComboBox(self)
-    keys = self.data.keys()
+    keys = list(self.data.keys())
     keys.sort()
     for k in keys:
       self.selectedData.addItem(k)
@@ -325,6 +329,8 @@ class PlotYAxis(object):
   def getLimits(self, frame0, frame, idx):
     if not len(self):
       return None
+    if frame0 is None:
+      frame0, frame = self.getFrameRange()
     values = iter(self.data.values())
     value0 = next(values)
     if np.all(np.isnan(value0[idx][frame0:frame])):
@@ -337,10 +343,32 @@ class PlotYAxis(object):
       max_ = max(np.nanmax(data), max_)
     return min_, max_
 
+  def getFrameRange(self):
+    if not len(self):
+      return None, None
+    def getRange(value, i0 = None, iN = None):
+      first, last = 0, 0
+      if self._3D:
+        check = np.nonzero(np.isfinite(value[0] + value[1] + value[2]))
+      else:
+        check = np.nonzero(np.isfinite(value[0] + value[1]))
+      if len(check[0]):
+        first = check[0][0]
+        last = check[0][-1]
+      if i0 is None:
+        return first, last
+      return min(i0, first), max(iN, last)
+    values = iter(self.data.values())
+    i0, iN = getRange(next(values))
+    for value in values:
+      i0, iN = getRange(value, i0, iN)
+    return i0, iN
 
   def setLimits(self, xlim = None, ylim = None, frame0 = None, frame = None, zlim = None):
     if not len(self):
-      return xlim
+      return xlim, ylim
+    if frame is None:
+      frame0, frame = self.getFrameRange()
     dataLim = self._axis.dataLim.get_points()
     setMargin = lambda min_, max_: [min_ - 0.01 * (max_-min_), max_ + 0.01 * (max_-min_)]
     def setLimit(lim, idx, set_lim):
@@ -356,11 +384,10 @@ class PlotYAxis(object):
         min_, max_ = setMargin(dataLim[0][idx], dataLim[1][idx])
       set_lim([min_, max_])
       return min_, max_
-    setLimit(ylim, 1, self._axis.set_ylim)
     if self._3D:
       frame = -1
       setLimit(zlim, 2, self._axis.set_zlim)
-    return setLimit(xlim, 0, self._x_axis.set_xlim)
+    return setLimit(xlim, 0, self._x_axis.set_xlim), setLimit(ylim, 1, self._axis.set_ylim)
 
   def _label(self, get_label, set_label, l, size):
     if l is None:
@@ -407,7 +434,7 @@ class PlotYAxis(object):
       self.plots[y_label].set_data(self.data[y_label][0][frame0:frame], self.data[y_label][1][frame0:frame])
       if self._3D:
         self.plots[y_label].set_3d_properties(self.data[y_label][2][frame0:frame])
-    return self.plots.values()
+    return list(self.plots.values())
 
   def update_x(self, x):
     styles = {}
@@ -648,10 +675,20 @@ class PlotFigure(object):
         x_limits = [x_limits[0] - range_ * 0.01, x_limits[1] + range_ * 0.01]
 
     if self._3D:
-      x_limits = self._left().setLimits(x_limits, y1_limits, frame0 = frame0, frame = frame, zlim = y2_limits)
+      x_limits, _ = self._left().setLimits(x_limits, y1_limits, frame0 = frame0, frame = frame, zlim = y2_limits)
     else:
-      x_limits = self._left().setLimits(x_limits, y1_limits, frame0 = frame0, frame = frame)
-      x_limits = self._right().setLimits(x_limits, y2_limits, frame0 = frame0, frame = frame)
+      x_limits, y1_new_limits = self._left().setLimits(x_limits, y1_limits, frame0 = frame0, frame = frame)
+      x_limits, y2_new_limits = self._right().setLimits(x_limits, y2_limits, frame0 = frame0, frame = frame)
+      # Limits are not pre-set and there is actual data on both axis
+      if y1_limits is None and y2_limits is None and y1_new_limits is not None and y2_new_limits is not None:
+        y1_mid = (y1_new_limits[0] + y1_new_limits[1]) / 2
+        y2_mid = (y2_new_limits[0] + y2_new_limits[1]) / 2
+        y1_y2_ratio = y1_mid / y2_mid
+        if y1_y2_ratio > 0.2 and y1_y2_ratio < 5:
+          y_min = min(y1_new_limits[0], y2_new_limits[0])
+          y_max = max(y1_new_limits[1], y2_new_limits[1])
+          self._left()._axis.set_ylim(y_min, y_max)
+          self._right()._axis.set_ylim(y_min, y_max)
 
     self._legend()
     self._drawGrid()
@@ -943,30 +980,48 @@ class SimpleAxesDialog(QtWidgets.QDialog):
     applyButton = QtWidgets.QPushButton("Apply", self)
     confirmLayout.addWidget(applyButton)
     applyButton.clicked.connect(self.apply)
+    if not parent._3D:
+      alignButton = QtWidgets.QPushButton("Align left/right", self)
+      confirmLayout.addWidget(alignButton)
+      alignButton.clicked.connect(self.align)
     cancelButton = QtWidgets.QPushButton("Cancel", self)
     confirmLayout.addWidget(cancelButton)
     cancelButton.clicked.connect(self.reject)
     self.layout.addLayout(confirmLayout, 4, 0, 1, 3)
 
+  def get_limits(self):
+    x_limits = [float(self.x_min.text()), float(self.x_max.text())]
+    y1_limits = [float(self.y1_min.text()), float(self.y1_max.text())]
+    y2_limits = [float(self.y2_min.text()), float(self.y2_max.text())]
+    return x_limits, y1_limits, y2_limits
+
   def apply(self):
     changed = False
-    x_limits = [float(self.x_min.text()), float(self.x_max.text())]
+    x_limits, y1_limits, y2_limits = self.get_limits()
     if x_limits != self.x_init:
       changed = True
       self.parent().x_locked.setChecked(True)
       self.parent().x_limits = x_limits
-    y1_limits = [float(self.y1_min.text()), float(self.y1_max.text())]
     if y1_limits != self.y1_init:
       changed = True
       self.parent().y1_locked.setChecked(True)
       self.parent().y1_limits = y1_limits
-    y2_limits = [float(self.y2_min.text()), float(self.y2_max.text())]
     if y2_limits != self.y2_init:
       changed = True
       self.parent().y2_locked.setChecked(True)
       self.parent().y2_limits = y2_limits
     if changed:
       self.parent().draw()
+
+  def align(self):
+    _, y1_limits, y2_limits = self.get_limits()
+    y1_limits[0] = min(y1_limits[0], y2_limits[0])
+    y1_limits[1] = max(y1_limits[1], y2_limits[1])
+    self.parent().y1_locked.setChecked(True)
+    self.parent().y1_limits = y1_limits
+    self.parent().y2_locked.setChecked(True)
+    self.parent().y2_limits = y1_limits
+    self.parent().draw()
 
   def accept(self):
     QtWidgets.QDialog.accept(self)
@@ -1020,25 +1075,30 @@ class PlotCanvasWithToolbar(PlotFigure, QWidget):
     self.genRangeButton.released.connect(lambda: GenerateRangeDialog(self).exec_())
     layout.addWidget(self.genRangeButton)
 
-    self.x_locked = QtWidgets.QPushButton(u"🔒X", self)
+    self.x_locked = QtWidgets.QPushButton(u"Lock X", self)
     self.x_locked.setCheckable(True)
     layout.addWidget(self.x_locked)
     self.x_locked.toggled.connect(self.x_locked_changed)
     self.x_limits = None
 
-    self.y1_locked = QtWidgets.QPushButton(u"🔒 Y1", self)
+    self.y1_locked = QtWidgets.QPushButton(u"Lock Y1", self)
     self.y1_locked.setCheckable(True)
     layout.addWidget(self.y1_locked)
     self.y1_locked.toggled.connect(self.y1_locked_changed)
     self.y1_limits = None
 
-    self.y2_locked = QtWidgets.QPushButton(u"🔒 Y2", self)
+    self.y2_locked = QtWidgets.QPushButton(u"Lock Y2", self)
     if self._3D:
-      self.y2_locked.setText(u"🔒 Z")
+      self.y2_locked.setText(u"Lock Z")
     self.y2_locked.setCheckable(True)
     layout.addWidget(self.y2_locked)
     self.y2_locked.toggled.connect(self.y2_locked_changed)
     self.y2_limits = None
+
+    if not self._3D:
+      self.align_y1_y2 = QtWidgets.QPushButton(u"Align Y1/Y2", self)
+      layout.addWidget(self.align_y1_y2)
+      self.align_y1_y2.released.connect(self.align_y1_y2_released)
 
     self.layout.addLayout(layout)
 
@@ -1248,10 +1308,10 @@ class PlotCanvasWithToolbar(PlotFigure, QWidget):
 
   def _y_lock_changed(self, name, cbox, get_lim):
     if cbox.isChecked():
-      cbox.setText(u"🔓 {}".format(name))
+      cbox.setText(u"Unlock {}".format(name))
       return get_lim()
     else:
-      cbox.setText(u"🔒{}".format(name))
+      cbox.setText(u"Lock {}".format(name))
       return None
 
   def x_locked_changed(self, status):
@@ -1270,6 +1330,21 @@ class PlotCanvasWithToolbar(PlotFigure, QWidget):
     else:
       self.y2_limits = self._y_lock_changed("Y2", self.y2_locked, self._right().axis().get_ylim)
     if self.y2_limits is None:
+      self.draw()
+
+  def align_y1_y2_released(self):
+    i0, iN = self.getFrameRange()
+    if i0 == iN:
+      return
+    if self.y1_limits is None:
+      self.y1_limits = self._left().getLimits(i0, iN, 1)
+    if self.y2_limits is None:
+      self.y2_limits = self._right().getLimits(i0, iN, 1)
+    if self.y1_limits is not None and self.y2_limits is not None:
+      self.y1_locked.setChecked(True)
+      self.y2_locked.setChecked(True)
+      self.y1_limits = (min(self.y1_limits[0], self.y2_limits[0]), max(self.y1_limits[1], self.y2_limits[1]))
+      self.y2_limits = self.y1_limits
       self.draw()
 
   def show(self):

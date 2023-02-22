@@ -26,14 +26,14 @@ ControllerServer::ControllerServer(double dt,
     socket = nn_socket(AF_SP, proto);
     if(socket < 0)
     {
-      mc_rtc::log::error_and_throw<std::runtime_error>("Failed to initialize {}", name);
+      mc_rtc::log::error_and_throw("Failed to initialize {}", name);
     }
     for(const auto & uri : uris)
     {
       int ret = nn_bind(socket, uri.c_str());
       if(ret < 0)
       {
-        mc_rtc::log::error_and_throw<std::runtime_error>("Failed to bind {} to uri: {}", name, uri);
+        mc_rtc::log::error_and_throw("Failed to bind {} to uri: {}", name, uri);
       }
     }
   };
@@ -99,6 +99,7 @@ void ControllerServer::publish(mc_rtc::gui::StateBuilder & gui_builder)
   }
   else
   {
+    gui_builder.update();
     buffer_size_ = 0;
   }
 }

@@ -4,7 +4,7 @@
 
 #include "mpack.h"
 
-#if not EIGEN_VERSION_AT_LEAST(3, 2, 90)
+#if !EIGEN_VERSION_AT_LEAST(3, 2, 90)
 namespace Eigen
 {
 using Index = Eigen::DenseIndex;
@@ -196,6 +196,13 @@ void MessagePackBuilder::write(const Eigen::Vector2d & v)
 void MessagePackBuilder::write(const Eigen::Vector3d & v)
 {
   start_array(3);
+  write_vector(impl_.get(), v);
+  finish_array();
+}
+
+void MessagePackBuilder::write(const Eigen::Vector4d & v)
+{
+  start_array(4);
   write_vector(impl_.get(), v);
   finish_array();
 }

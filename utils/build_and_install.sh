@@ -24,7 +24,7 @@ fi
 
 readonly this_dir=`cd $(dirname $0); pwd`
 readonly mc_rtc_dir=`cd $this_dir/..; pwd`
-readonly PYTHON_VERSION=`python -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))'`
+PYTHON_VERSION=`python -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))'`
 
 . "$this_dir/build_and_install_default_config.sh"
 
@@ -69,7 +69,7 @@ fix_ninja_perms()
     owner="$(stat --format '%U' .ninja_deps)"
     if [ "x${owner}" != "x${USER}" ]
     then
-      sudo chown -R $USER .ninja_deps
+      ${REQUIRED_SUDO} chown -R $USER .ninja_deps
     fi
   fi
   if [ -f .ninja_log ]
@@ -77,7 +77,7 @@ fix_ninja_perms()
     owner="$(stat --format '%U' .ninja_log)"
     if [ "x${owner}" != "x${USER}" ]
     then
-      sudo chown -R $USER .ninja_log
+      ${REQUIRED_SUDO} chown -R $USER .ninja_log
     fi
   fi
 }
@@ -119,6 +119,7 @@ readonly HELP_STRING="$(basename $0) [OPTIONS] ...
     --with-hrp4j                             : enable HRP4J (requires mc-hrp4 group access)            (default $WITH_HRP4J)
     --with-hrp4cr                            : enable HRP4CR (requires isri-aist group access)         (default $WITH_HRP4CR)
     --with-hrp5                              : enable HRP5 (requires mc-hrp5 group access)             (default $WITH_HRP5)
+    --with-panda                             : enable Panda (requires ROS)                             (default $WITH_PANDA)
     --with-mc_openrtm                        : enable the mc_openrtm interface (requires hrpsys-base)  (default $WITH_MC_OPENRTM)
     --with-mc_udp                            : enable the mc_udp interface (requires hrpsys-base)      (default $WITH_MC_UDP)
     --with-python-support           {true, false} : whether to build with Python support               (default $WITH_PYTHON_SUPPORT)
@@ -236,6 +237,12 @@ do
         check_true_false --with-hrp5 "$WITH_HRP5"
         ;;
 
+        --with-panda)
+        i=$(($i+1))
+        WITH_PANDA="${!i}"
+        check_true_false --with-panda "$WITH_PANDA"
+        ;;
+
         --with-mc_udp)
         i=$(($i+1))
         WITH_MC_UDP="${!i}"
@@ -327,6 +334,13 @@ then
   exit_failure
 fi
 
+if [ $(id -u) -eq 0 ]
+then
+  export REQUIRED_SUDO=
+else
+  export REQUIRED_SUDO=sudo
+fi
+
 if $WITH_PYTHON_SUPPORT
 then
   WITH_PYTHON_SUPPORT=ON
@@ -384,8 +398,8 @@ install_apt()
   done
   if [ "${TO_INSTALL}" != "" ]
   then
-    exec_log sudo apt-get update
-    exec_log sudo apt-get -y install ${TO_INSTALL}
+    exec_log ${REQUIRED_SUDO} apt-get update
+    exec_log ${REQUIRED_SUDO} apt-get -y install $*
   fi
   exit_if_error "-- [ERROR] Could not install one of the following packages ${TO_INSTALL}."
 }
@@ -416,6 +430,7 @@ echo_log "   WITH_HRP4=$WITH_HRP4"
 echo_log "   WITH_HRP4J=$WITH_HRP4J"
 echo_log "   WITH_HRP4CR=$WITH_HRP4CR"
 echo_log "   WITH_HRP5=$WITH_HRP5"
+echo_log "   WITH_PANDA=$WITH_PANDA"
 echo_log "   WITH_MC_UDP=$WITH_MC_UDP"
 echo_log "   MC_UDP_INSTALL_PREFIX=$MC_UDP_INSTALL_PREFIX"
 echo_log "   WITH_MC_OPENRTM=$WITH_MC_OPENRTM"
@@ -424,6 +439,14 @@ echo_log "   SKIP_UPDATE=$SKIP_UPDATE"
 echo_log "   SKIP_DIRTY_UPDATE=$SKIP_DIRTY_UPDATE"
 echo_log "   BUILD_LOGFILE=$BUILD_LOGFILE"
 echo_log "   ASK_USER_INPUT=$ASK_USER_INPUT"
+
+if $WITH_PANDA
+then
+  if ! $WITH_ROS_SUPPORT
+  then
+    exit_failure "Panda robot cannot be installed without ROS support"
+  fi
+fi
 
 ##################################################
 ## Extra OS/Distribution specific configuration ##
@@ -435,6 +458,11 @@ echo_log "========================"
 echo_log ""
 if [[ $OSTYPE == "linux-gnu" ]]
 then
+  if ! command -v lsb_release &> /dev/null
+  then
+    echo_log "lsb_release must be installed for this script to work"
+    exit_failure
+  fi
   exec_log lsb_release -a
 fi
 exec_log cmake --version
@@ -453,6 +481,10 @@ then
   then
     . $this_dir/config_build_and_install.`lsb_release -sc`.sh
     ROS_APT_DEPENDENCIES="ros-${ROS_DISTRO}-ros-base ros-${ROS_DISTRO}-rosdoc-lite ros-${ROS_DISTRO}-common-msgs ros-${ROS_DISTRO}-tf2-ros ros-${ROS_DISTRO}-xacro ros-${ROS_DISTRO}-rviz"
+    if $WITH_PANDA
+    then
+      ROS_APT_DEPENDENCIES="$ROS_APT_DEPENDENCIES ros-${ROS_DISTRO}-libfranka ros-${ROS_DISTRO}-franka-description"
+    fi
   else
     ROS_DISTRO=""
     APT_DEPENDENCIES=""
@@ -478,11 +510,24 @@ then
   mkdir -p $SOURCE_DIR
 fi
 
+
+if [ "x$PYTHON_FORCE_PYTHON2" == xON ] ; then
+  PYTHON_VERSION=`python2 -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))'`
+elif [ "x$PYTHON_FORCE_PYTHON3" == xON ] ; then
+  PYTHON_VERSION=`python3 -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))'`
+fi
+readonly PYTHON_VERSION
+
 export PATH=$INSTALL_PREFIX/bin:$PATH
 export LD_LIBRARY_PATH=$INSTALL_PREFIX/lib:$LD_LIBRARY_PATH
 export DYLD_LIBRARY_PATH=$INSTALL_PREFIX/lib:$DYLD_LIBRARY_PATH
 export PKG_CONFIG_PATH=$INSTALL_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH
 export PYTHONPATH=$INSTALL_PREFIX/lib/python$PYTHON_VERSION/site-packages:$PYTHONPATH
+echo_log "PATH: $PATH"
+echo_log "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
+echo_log "DYLD_LIBRARY_PATH: $DYLD_LIBRARY_PATH"
+echo_log "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
+echo_log "PYTHONPATH: $PYTHONPATH"
 
 #make settings readonly
 readonly INSTALL_PREFIX
@@ -504,6 +549,7 @@ readonly WITH_HRP4
 readonly WITH_HRP4J
 readonly WITH_HRP4CR
 readonly WITH_HRP5
+readonly WITH_PANDA
 readonly WITH_MC_OPENRTM
 readonly MC_OPENRTM_INSTALL_PREFIX
 readonly WITH_MC_UDP
@@ -512,6 +558,7 @@ readonly SKIP_UPDATE
 readonly SKIP_DIRTY_UPDATE
 readonly BUILD_LOGFILE
 readonly ASK_USER_INPUT
+readonly BUILD_SUBDIR
 
 echo_log "-- Installing with the following options:"
 echo_log "   INSTALL_PREFIX=$INSTALL_PREFIX"
@@ -533,6 +580,7 @@ echo_log "   WITH_HRP4=$WITH_HRP4"
 echo_log "   WITH_HRP4J=$WITH_HRP4J"
 echo_log "   WITH_HRP4CR=$WITH_HRP4CR"
 echo_log "   WITH_HRP5=$WITH_HRP5"
+echo_log "   WITH_PANDA=$WITH_PANDA"
 echo_log "   WITH_MC_UDP=$WITH_MC_UDP"
 echo_log "   MC_UDP_INSTALL_PREFIX=$MC_UDP_INSTALL_PREFIX"
 echo_log "   WITH_MC_OPENRTM=$WITH_MC_OPENRTM"
@@ -659,9 +707,9 @@ then
   then
     if [ $OS = Ubuntu -o $OS = Debian ]
     then
-      sudo mkdir -p /etc/apt/sources.list.d/
-      sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu `lsb_release -c -s` main" > /etc/apt/sources.list.d/ros-latest.list'
-      wget http://packages.ros.org/ros.key -O - | sudo apt-key add -
+      ${REQUIRED_SUDO} mkdir -p /etc/apt/sources.list.d/
+      ${REQUIRED_SUDO} sh -c 'echo "deb http://packages.ros.org/ros/ubuntu `lsb_release -c -s` main" > /etc/apt/sources.list.d/ros-latest.list'
+      wget http://packages.ros.org/ros.key -O - | ${REQUIRED_SUDO} apt-key add -
     else
       echo_log "Please install ROS and the required dependencies (${ROS_APT_DEPENDENCIES}) before continuing your installation or disable ROS support"
       exit_failure
@@ -677,7 +725,7 @@ then
   fi
   CATKIN_DATA_WORKSPACE=$SOURCE_DIR/catkin_data_ws
   CATKIN_DATA_WORKSPACE_SRC=${CATKIN_DATA_WORKSPACE}/src
-  if [[ ! -f $CATKIN_DATA_WORKSPACE_SRC/devel/setup.bash ]]
+  if [[ ! -f $CATKIN_DATA_WORKSPACE/devel/setup.bash ]]
   then
     mkdir -p ${CATKIN_DATA_WORKSPACE_SRC}
     if $NOT_CLONE_ONLY
@@ -693,7 +741,7 @@ then
   fi
   CATKIN_WORKSPACE=$SOURCE_DIR/catkin_ws
   CATKIN_WORKSPACE_SRC=${CATKIN_WORKSPACE}/src
-  if [[ ! -f $CATKIN_WORKSPACE_SRC/devel/setup.bash ]]
+  if [[ ! -f $CATKIN_WORKSPACE/devel/setup.bash ]]
   then
     mkdir -p ${CATKIN_WORKSPACE_SRC}
     if $NOT_CLONE_ONLY
@@ -895,7 +943,7 @@ check_and_clone_git_dependency()
 }
 
 # If the dependencies have already been cloned, check if the local state of the repository is clean before upgrading
-GIT_DEPENDENCIES="humanoid-path-planner/hpp-spline#v4.7.0 jrl-umi3218/SpaceVecAlg jrl-umi3218/state-observation jrl-umi3218/sch-core jrl-umi3218/RBDyn jrl-umi3218/eigen-qld jrl-umi3218/eigen-quadprog jrl-umi3218/Tasks jrl-umi3218/mc_rbdyn_urdf"
+GIT_DEPENDENCIES="loco-3d/ndcurves#v1.1.5 jrl-umi3218/SpaceVecAlg jrl-umi3218/state-observation jrl-umi3218/sch-core jrl-umi3218/RBDyn jrl-umi3218/eigen-qld jrl-umi3218/eigen-quadprog jrl-umi3218/Tasks"
 if [ "x$SYSTEM_HAS_SPDLOG" == xOFF ]
 then
   GIT_DEPENDENCIES="gabime/spdlog#v1.6.1 $GIT_DEPENDENCIES"
@@ -997,6 +1045,12 @@ then
     echo_log "-- [OK] Successfully cloned and updated the robot description $git_dep to $repo_dir (no catkin)"
   fi
   check_and_clone_git_dependency git@gite.lirmm.fr:mc-hrp5/mc_hrp5_p $SOURCE_DIR
+  echo_log "-- [OK] Successfully cloned and updated the robot module $git_dep to $repo_dir"
+fi
+
+if $WITH_PANDA
+then
+  check_and_clone_git_dependency jrl-umi3218/mc_panda $SOURCE_DIR
   echo_log "-- [OK] Successfully cloned and updated the robot module $git_dep to $repo_dir"
 fi
 
@@ -1200,7 +1254,7 @@ then
   build_git_dependency_no_test gabime/spdlog
 fi
 export CMAKE_ADDITIONAL_OPTIONS="-DBUILD_PYTHON_INTERFACE:BOOL=OFF ${OLD_CMAKE_OPTIONS}"
-build_git_dependency_no_test humanoid-path-planner/hpp-spline
+build_git_dependency_no_test loco-3d/ndcurves
 build_git_dependency jrl-umi3218/state-observation
 export CMAKE_ADDITIONAL_OPTIONS="${OLD_CMAKE_OPTIONS}"
 if [ "x$WITH_PYTHON_SUPPORT" == xON ]
@@ -1228,7 +1282,6 @@ fi
 export DISABLE_NINJA=OFF
 
 build_git_dependency jrl-umi3218/Tasks tasks
-build_git_dependency jrl-umi3218/mc_rbdyn_urdf mc_rbdyn_urdf
 
 if $WITH_ROS_SUPPORT
 then
@@ -1412,6 +1465,13 @@ then
   echo_log "-- [OK] Successfully built the robot module $git_dep"
 fi
 
+if $WITH_PANDA
+then
+  echo_log "-- Installing with PANDA robot support"
+  build_git_dependency jrl-umi3218/mc_panda
+  echo_log "-- [OK] Successfully built the robot module $git_dep"
+fi
+
 if $WITH_MC_UDP
 then
   echo_log "-- Installing with mc_udp interface support"
@@ -1461,3 +1521,12 @@ echo_log ""
 echo_log "If you want autocompletion on the scripts add also the following to your .bashrc/.zshrc"
 echo_log "source $this_dir/autocompletion.bash"
 echo_log "If you are running zsh, replace autocompletion.bash with autocompletion.zsh in that last line"
+
+if $WITH_PANDA
+then
+  echo_log ""
+  echo_log "== Panda robot =="
+  echo_log "The Panda robot module has been installed, you will be able to run controllers and simulations."
+  echo_log "To execute controllers on the real robot you will need to install mc_franka on a real-time linux system"
+  echo_log "See https://github.com/jrl-umi3218/mc_franka for instructions"
+fi
