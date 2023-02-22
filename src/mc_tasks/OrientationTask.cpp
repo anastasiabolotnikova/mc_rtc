@@ -1,13 +1,18 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #include <mc_tasks/OrientationTask.h>
+
+#include <mc_tvm/OrientationFunction.h>
 
 #include <mc_rtc/gui/Rotation.h>
 
 namespace mc_tasks
 {
+
+static inline mc_rtc::void_ptr_caster<tasks::qp::OrientationTask> tasks_error{};
+static inline mc_rtc::void_ptr_caster<mc_tvm::OrientationFunction> tvm_error{};
 
 OrientationTask::OrientationTask(const std::string & bodyName,
                                  const mc_rbdyn::Robots & robots,
@@ -19,9 +24,20 @@ OrientationTask::OrientationTask(const std::string & bodyName,
 }
 
 OrientationTask::OrientationTask(const mc_rbdyn::RobotFrame & frame, double stiffness, double weight)
-: TrajectoryTaskGeneric<tasks::qp::OrientationTask>(frame, stiffness, weight), frame_(frame)
+: TrajectoryTaskGeneric(frame, stiffness, weight), frame_(frame)
 {
-  finalize(robots.mbs(), static_cast<int>(rIndex), frame.body(), (frame.X_b_f().inv() * frame.position()).rotation());
+  switch(backend_)
+  {
+    case Backend::Tasks:
+      finalize<Backend::Tasks, tasks::qp::OrientationTask>(robots.mbs(), static_cast<int>(rIndex), frame.body(),
+                                                           (frame.X_b_f().inv() * frame.position()).rotation());
+      break;
+    case Backend::TVM:
+      finalize<Backend::TVM, mc_tvm::OrientationFunction>(frame);
+      break;
+    default:
+      mc_rtc::log::error_and_throw("[OrientationTask] Not implemented for backend: {}", backend_);
+  }
   type_ = "orientation";
   name_ = "orientation_" + frame.robot().name() + "_" + frame.name();
 }
@@ -29,22 +45,50 @@ OrientationTask::OrientationTask(const mc_rbdyn::RobotFrame & frame, double stif
 void OrientationTask::reset()
 {
   TrajectoryTaskGeneric::reset();
-  errorT->orientation((frame_->X_b_f().inv() * frame_->position()).rotation());
+  switch(backend_)
+  {
+    case Backend::Tasks:
+      orientation((frame_->X_b_f().inv() * frame_->position()).rotation());
+      break;
+    case Backend::TVM:
+      orientation(frame_->position().rotation());
+      break;
+    default:
+      break;
+  }
 }
 
 void OrientationTask::orientation(const Eigen::Matrix3d & ori)
 {
-  errorT->orientation((frame_->X_b_f() * sva::PTransformd{ori}).rotation());
+  switch(backend_)
+  {
+    case Backend::Tasks:
+      tasks_error(errorT)->orientation((frame_->X_b_f().inv() * sva::PTransformd{ori}).rotation());
+      break;
+    case Backend::TVM:
+      tvm_error(errorT)->orientation(ori);
+      break;
+    default:
+      break;
+  }
 }
 
 Eigen::Matrix3d OrientationTask::orientation()
 {
-  return (frame_->X_b_f().inv() * errorT->orientation()).rotation();
+  switch(backend_)
+  {
+    case Backend::Tasks:
+      return (frame_->X_b_f() * tasks_error(errorT)->orientation()).rotation();
+    case Backend::TVM:
+      return tvm_error(errorT)->orientation();
+    default:
+      mc_rtc::log::error_and_throw("Not implemented");
+  }
 }
 
 void OrientationTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
 {
-  TrajectoryTaskGeneric<tasks::qp::OrientationTask>::addToGUI(gui);
+  TrajectoryTaskGeneric::addToGUI(gui);
   gui.addElement({"Tasks", name_},
                  mc_rtc::gui::Rotation(
                      "ori_target",

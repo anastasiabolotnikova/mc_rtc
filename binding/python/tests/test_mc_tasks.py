@@ -1,13 +1,12 @@
 #
-# Copyright 2015-2020 CNRS-UM LIRMM, CNRS-AIST JRL
+# Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
 #
 
+import mc_solver
 import mc_tasks
 import mc_rbdyn
 import mc_rtc
 import eigen as e
-
-from nose import with_setup
 
 mc_rtc.Loader.debug_suffix("")
 
@@ -20,6 +19,7 @@ class TestMCTasks():
     mc_rbdyn.RobotLoader.update_robot_module_path(["$<TARGET_FILE_DIR:jvrc1>"])
     self.rm = mc_rbdyn.get_robot_module("JVRC1")
     self.robots.load(self.rm)
+    self.solver = mc_solver.QPSolver(self.robots, 0.005)
 
   @classmethod
   def teardown_class(self):

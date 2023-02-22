@@ -143,16 +143,16 @@ cdef class MCController(object):
       return self.base.timeStep
   property contactConstraint:
     def __get__(self):
-      return mc_solver.ContactConstraintFromPtr(&self.base.contactConstraint)
+      return mc_solver.ContactConstraintFromPtr(self.base.contactConstraint.get())
   property dynamicsConstraint:
     def __get__(self):
-      return mc_solver.DynamicsConstraintFromPtr(&self.base.dynamicsConstraint)
+      return mc_solver.DynamicsConstraintFromPtr(self.base.dynamicsConstraint.get())
   property kinematicsConstraint:
     def __get__(self):
-      return mc_solver.KinematicsConstraintFromPtr(&self.base.kinematicsConstraint)
+      return mc_solver.KinematicsConstraintFromPtr(self.base.kinematicsConstraint.get())
   property selfCollisionConstraint:
     def __get__(self):
-      return mc_solver.CollisionsConstraintFromPtr(&self.base.selfCollisionConstraint)
+      return mc_solver.CollisionsConstraintFromPtr(self.base.selfCollisionConstraint.get())
   property postureTask:
     def __get__(self):
       return mc_tasks.PostureTaskFromPtr(self.base.postureTask.get())
@@ -339,8 +339,6 @@ cdef class MCGlobalController(object):
     self.impl.setEncoderValues(rn, q)
   def setEncoderVelocities(self, alpha):
     self.impl.setEncoderVelocities(alpha)
-  def setFlexibilityValues(self, flex):
-    self.impl.setFlexibilityValues(flex)
   def setJointTorques(self, tau):
     self.impl.setJointTorques(tau)
   def setWrenches(self, wrenchesIn):

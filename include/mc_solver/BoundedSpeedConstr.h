@@ -1,28 +1,28 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #pragma once
 
-#include <mc_solver/QPSolver.h>
-#include <mc_solver/api.h>
+#include <mc_solver/ConstraintSet.h>
 
-#include <Tasks/QPConstr.h>
+#include <mc_rtc/void_ptr.h>
 
 namespace mc_solver
 {
-/** \class BoundedSpeedConstr
- * \brief Wrapper around tasks::qp::BoundedSpeedConstr
- */
 
+/** \class BoundedSpeedConstr
+ *
+ * Manage constraints on the speed of a given frame
+ */
 struct MC_SOLVER_DLLAPI BoundedSpeedConstr : public ConstraintSet
 {
 public:
   BoundedSpeedConstr(const mc_rbdyn::Robots & robots, unsigned int robotIndex, double dt);
 
-  virtual void addToSolver(const std::vector<rbd::MultiBody> & mbs, tasks::qp::QPSolver & solver) override;
+  void addToSolverImpl(QPSolver & solver) override;
 
-  virtual void removeFromSolver(tasks::qp::QPSolver & solver) override;
+  void removeFromSolverImpl(QPSolver & solver) override;
 
   /** Add a fixed speed constraint on the given body
    *
@@ -102,18 +102,23 @@ public:
                        const Eigen::VectorXd & lowerSpeed,
                        const Eigen::VectorXd & upperSpeed);
 
-  /** Remove all constraints associated to a body */
-  bool removeBoundedSpeed(QPSolver & solver, const std::string & bodyName);
-
-  /** Remove all constraints associated to a frame */
-  bool removeBoundedSpeed(QPSolver & solver, const mc_rbdyn::RobotFrame & frame);
+  /** Remove all constraints associated to a body or a frame */
+  bool removeBoundedSpeed(QPSolver & solver, const std::string & frameName);
 
   size_t nrBoundedSpeeds() const;
 
   void reset(QPSolver & solver);
 
 private:
-  std::shared_ptr<tasks::qp::BoundedSpeedConstr> constr;
+  /** Holds the constraint implementation
+   *
+   * In Tasks backend:
+   * - tasks::qp::BoundedSpeedConstr
+   *
+   * In TVM backend:
+   * - details::TVMBoundedSpeedConstr
+   */
+  mc_rtc::void_ptr constraint_;
   unsigned int robotIndex;
 };
 

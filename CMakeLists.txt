@@ -2,7 +2,7 @@
 # Copyright 2015-2020 CNRS-UM LIRMM, CNRS-AIST JRL
 #
 
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.15)
 if(POLICY CMP0063)
   cmake_policy(SET CMP0063 NEW)
 endif()
@@ -12,7 +12,7 @@ endif()
 
 set(PROJECT_NAME mc_rtc)
 set(PROJECT_DESCRIPTION mc_rtc)
-set(PROJECT_VERSION 1.13.0)
+set(PROJECT_VERSION 2.2.0)
 set(PROJECT_URL https://gite.lirmm.fr/multi-contact/mc_rtc)
 set(PROJECT_DEBUG_POSTFIX "_d")
 set(PROJECT_USE_KEYWORD_LINK_LIBRARIES TRUE)
@@ -32,6 +32,27 @@ include(cmake/base.cmake)
 include(cmake/cython/cython.cmake)
 include(cmake/msvc-specific.cmake)
 include(cmake/version-script.cmake)
+
+if(PYTHON_BINDING)
+  set(PYTHON_BINDING_VERSIONS)
+  if(PYTHON_BINDING_FORCE_PYTHON2 OR PYTHON_BINDING_BUILD_PYTHON2_AND_PYTHON3)
+    list(APPEND PYTHON_BINDING_VERSIONS Python2)
+  endif()
+  if(PYTHON_BINDING_FORCE_PYTHON3 OR PYTHON_BINDING_BUILD_PYTHON2_AND_PYTHON3)
+    list(APPEND PYTHON_BINDING_VERSIONS Python3)
+  endif()
+  list(LENGTH PYTHON_BINDING_VERSIONS N_PYTHON_BINDING_VERSIONS)
+  if(N_PYTHON_BINDING_VERSIONS EQUAL 0)
+    list(APPEND PYTHON_BINDING_VERSIONS Python)
+    find_program(DEFAULT_PYTHON_EXECUTABLE python)
+    if(DEFAULT_PYTHON_EXECUTABLE)
+      set(Python_EXECUTABLE ${DEFAULT_PYTHON_EXECUTABLE})
+    endif()
+  endif()
+  foreach(PYTHON_VERSION ${PYTHON_BINDING_VERSIONS})
+    find_package(${PYTHON_VERSION} REQUIRED COMPONENTS Interpreter Development NumPy)
+  endforeach()
+endif()
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
@@ -89,6 +110,7 @@ endif()
 
 add_project_dependency(Boost REQUIRED COMPONENTS filesystem timer ${BOOST_STACKTRACE})
 add_project_dependency(Tasks REQUIRED)
+add_project_dependency(TVM REQUIRED)
 if(NOT TARGET RBDyn::Parsers)
   message(FATAL_ERROR "RBDyn must be built with parsers support")
 endif()
@@ -109,6 +131,39 @@ find_package(mc_rtc_3rd_party_geos REQUIRED)
 if(NOT MC_RTC_DISABLE_NETWORK)
   # nanomsg (defines/imports target: nanomsg)
   find_package(mc_rtc_3rd_party_nanomsg REQUIRED)
+endif()
+
+if(DEFINED ENV{WSL_DISTRO_NAME})
+  set(HOST_IS_WSL ON)
+else()
+  set(HOST_IS_WSL OFF)
+endif()
+
+if(HOST_IS_WSL)
+  set(WSL_NOTIFY_SEND_VERSION "v0.1.871612270")
+  set(WSL_NOTIFY_SEND_SHA256 8531436fd005844aca9948d68b9e4e40df56645a9eade91f47027cdd4d0a1b0e)
+  file(
+    DOWNLOAD
+      https://github.com/stuartleeks/wsl-notify-send/releases/download/${WSL_NOTIFY_SEND_VERSION}/wsl-notify-send_windows_amd64.zip
+      ${PROJECT_BINARY_DIR}/3rd-party/wsl-notify-send.zip
+    EXPECTED_HASH SHA256=${WSL_NOTIFY_SEND_SHA256}
+  )
+  set(WSL_NOTIFY_SEND_DIR "${PROJECT_BINARY_DIR}/3rd-party/wsl-notify-send/")
+  file(MAKE_DIRECTORY ${WSL_NOTIFY_SEND_DIR})
+  execute_process(
+    COMMAND ${CMAKE_COMMAND} -E tar xf ${PROJECT_BINARY_DIR}/3rd-party/wsl-notify-send.zip
+    WORKING_DIRECTORY "${WSL_NOTIFY_SEND_DIR}"
+    COMMAND_ERROR_IS_FATAL ANY
+  )
+  set(WSL_NOTIFY_SEND_LOCATION "${WSL_NOTIFY_SEND_DIR}/wsl-notify-send.exe")
+  message("-- Use wsl-notify-send for notifications at ${WSL_NOTIFY_SEND_LOCATION}")
+endif()
+
+if(NOT HOST_IS_WSL AND NOT WIN32)
+  find_package(mc_rtc_3rd_party_libnotify REQUIRED)
+  message("-- Use libnotify for notifications")
+elseif(NOT HOST_IS_WSL AND WIN32)
+  message("-- Use WinToast for notifications")
 endif()
 
 # qhull (build re-entrant static version)
@@ -189,16 +244,17 @@ add_subdirectory(CMakeModules)
 add_subdirectory(doc)
 add_subdirectory(src)
 add_subdirectory(plugins)
+add_subdirectory(utils)
+
+if(${PYTHON_BINDING})
+ add_subdirectory(binding/python)
+endif()
+
 if(${BUILD_TESTING})
   add_subdirectory(tests)
 endif()
 if(${BUILD_BENCHMARKS})
   add_subdirectory(benchmarks)
-endif()
-add_subdirectory(utils)
-
-if(${PYTHON_BINDING})
- add_subdirectory(binding/python)
 endif()
 
 add_subdirectory(robots)

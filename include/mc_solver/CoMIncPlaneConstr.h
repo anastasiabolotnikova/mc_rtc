@@ -1,31 +1,34 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #pragma once
 
-#include <mc_rbdyn/polygon_utils.h>
-#include <mc_solver/QPSolver.h>
-#include <mc_solver/api.h>
+#include <mc_solver/ConstraintSet.h>
 
 #include <mc_rtc/deprecated.h>
 
-#include <Tasks/QPConstr.h>
+#include <mc_rbdyn/polygon_utils.h>
+
+#include <mc_rtc/void_ptr.h>
 
 namespace mc_solver
 {
 
 /** \class CoMIncPlaneConstr
- * \brief Wrapper around tasks::qp::CoMIncPlaneConstr
+ *
+ *  For every plane provided to this constraint, this ensures that the robot's
+ *  CoM remains on the positive side of this plane.
+ *
  */
 struct MC_SOLVER_DLLAPI CoMIncPlaneConstr : public ConstraintSet
 {
 public:
   CoMIncPlaneConstr(const mc_rbdyn::Robots & robots, unsigned int robotIndex, double dt);
 
-  virtual void addToSolver(const std::vector<rbd::MultiBody> & mbs, tasks::qp::QPSolver & solver) override;
+  virtual void addToSolverImpl(QPSolver & solver) override;
 
-  virtual void removeFromSolver(tasks::qp::QPSolver & solver) override;
+  virtual void removeFromSolverImpl(QPSolver & solver) override;
 
   MC_RTC_DEPRECATED inline void set_planes(QPSolver & solver,
                                            const std::vector<mc_rbdyn::Plane> & planes,
@@ -49,7 +52,15 @@ public:
                  double dampingOff = 0.);
 
 private:
-  std::shared_ptr<tasks::qp::CoMIncPlaneConstr> constr;
+  /** Holds the constraint implementation
+   *
+   * In Tasks backend:
+   * - tasks::qp::CoMIncPlaneConstr
+   *
+   * In TVM backend:
+   * - details::TVMCoMIncPlaneConstr
+   */
+  mc_rtc::void_ptr constraint_;
 };
 
 } // namespace mc_solver

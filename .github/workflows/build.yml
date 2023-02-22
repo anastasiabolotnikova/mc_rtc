@@ -26,7 +26,9 @@ jobs:
         build-type: [Debug, RelWithDebInfo, script]
         compiler: [gcc, clang]
         exclude:
-          # Only default compiler on macos-latest and windows-latest
+          # Only default compiler on ubuntu-18.04, macos-latest and windows-latest
+          - os: ubuntu-18.04
+            compiler: clang
           - os: macos-latest
             compiler: clang
           - os: windows-latest
@@ -72,6 +74,9 @@ jobs:
         if [[ "${{ matrix.os }}" == "windows-latest" ]]
         then
           ./build_and_install.sh --user-input false --with-python-support false --build-testing false --build-benchmarks true
+        elif [[ "${{ matrix.os }}" == "macos-latest" ]]
+        then
+          ./build_and_install.sh --user-input false --with-python-support false --build-benchmarks true --allow-root true
         else
           ./build_and_install.sh --user-input false --build-benchmarks true --allow-root true
         fi
@@ -82,12 +87,12 @@ jobs:
         compiler: ${{ matrix.compiler }}
         build-type: ${{ matrix.build-type }}
         ubuntu: |
-          apt: cython cython3 python-nose python-pytest python3-nose python3-pytest python-numpy python3-numpy python-coverage python3-coverage python-setuptools python3-setuptools libeigen3-dev doxygen doxygen-latex libboost-all-dev libtinyxml2-dev libgeos++-dev libnanomsg-dev libyaml-cpp-dev libltdl-dev
+          apt: cython cython3 python-pytest python3-pytest python-numpy python3-numpy python-coverage python3-coverage python-setuptools python3-setuptools libeigen3-dev doxygen doxygen-latex libboost-all-dev libtinyxml2-dev libgeos++-dev libnanomsg-dev libyaml-cpp-dev libltdl-dev libnotify-dev
         macos: |
-          brew: eigen boost tinyxml2 geos nanomsg yaml-cpp pkg-config libtool gcc
-          pip: Cython coverage nose numpy pytest
+          brew: eigen boost tinyxml2 geos nanomsg yaml-cpp pkg-config libtool gcc libnotify
+          pip: Cython coverage numpy pytest
         windows: |
-          pip: Cython coverage nose numpy pytest
+          pip: Cython coverage numpy pytest
           github:
             - path: eigenteam/eigen-git-mirror
               ref: 3.3.7
@@ -101,6 +106,7 @@ jobs:
             - path: jbeder/yaml-cpp
               ref: 29dcf92f870ee51cce8d68f8fcfe228942e8dfe1
               options: -DYAML_CPP_BUILD_TESTS:BOOL=OFF
+        macos-options: -DPYTHON_BINDING:BOOL=OFF
         windows-options: -DPYTHON_BINDING:BOOL=OFF
         github: |
           - path: gabime/spdlog
@@ -121,12 +127,15 @@ jobs:
           - path: jrl-umi3218/mc_rtc_data
           - path: jrl-umi3218/eigen-quadprog
           - path: jrl-umi3218/state-observation
+          - path: jrl-umi3218/tvm
+            options: -DTVM_WITH_ROBOT:BOOL=OFF
     - name: Build and test
       if: matrix.build-type == 'RelWithDebInfo' || (matrix.build-type == 'Debug' && github.ref == 'refs/heads/master')
       uses: jrl-umi3218/github-actions/build-cmake-project@master
       with:
         compiler: ${{ matrix.compiler }}
         build-type: ${{ matrix.build-type }}
+        macos-options: -DPYTHON_BINDING:BOOL=OFF
         windows-options: -DPYTHON_BINDING:BOOL=OFF
     - name: Build and test (Debug/Fast tests)
       if: matrix.build-type == 'Debug' && github.ref != 'refs/heads/master'
@@ -135,6 +144,7 @@ jobs:
         compiler: ${{ matrix.compiler }}
         build-type: ${{ matrix.build-type }}
         options: '-DENABLE_FAST_TESTS:BOOL=ON'
+        macos-options: -DPYTHON_BINDING:BOOL=OFF
     - name: Build with ROS
       if: (matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04') && matrix.build-type != 'script'
       run: |
@@ -177,6 +187,7 @@ jobs:
         find . -type f -print0 | xargs -0 sed -i -e's@/usr/local/share/doc/Tasks/doxygen-html/@https://jrl-umi3218.github.io/Tasks/doxygen/HEAD/@g'
         find . -type f -print0 | xargs -0 sed -i -e's@/usr/local/share/doc/sch-core/doxygen-html/@https://jrl-umi3218.github.io/sch-core/doxygen/HEAD/@g'
         find . -type f -print0 | xargs -0 sed -i -e's@/usr/local/share/doc/mc_rbdyn_urdf/doxygen-html/@https://jrl-umi3218.github.io/mc_rbdyn_urdf/doxygen/HEAD/@g'
+        find . -type f -print0 | xargs -0 sed -i -e's@/usr/local/share/doc/TVM/doxygen-html/@https://jrl-umi3218.github.io/tvm/doxygen/HEAD/@g'
         sudo apt-get install -qq ruby-dev ruby-bundler libxml2-dev
         bundle install --path vendor
         git clone -b gh-pages https://gergondet:${{ secrets.GH_PAGES_TOKEN }}@github.com/jrl-umi3218/mc_rtc /tmp/website

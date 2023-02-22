@@ -1,10 +1,12 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #pragma once
 
 #include <mc_solver/KinematicsConstraint.h>
+
+#include <mc_tvm/DynamicFunction.h>
 
 #include <Tasks/QPMotionConstr.h>
 
@@ -12,7 +14,7 @@ namespace mc_solver
 {
 
 /** \class DynamicsConstraint
- * Holds dynamics constraints for a robot
+ * Holds dynamics constraints (equation of motion) for a robot
  */
 
 struct MC_SOLVER_DLLAPI DynamicsConstraint : public KinematicsConstraint
@@ -48,37 +50,45 @@ public:
                      double velocityPercent = 1.0,
                      bool infTorque = false);
 
-  /** Implementation of mc_solver::ConstraintSet::addToSolver */
-  virtual void addToSolver(const std::vector<rbd::MultiBody> & mbs, tasks::qp::QPSolver & solver) override;
-
-  /** Implementation of mc_solver::ConstraintSet::removeFromSolver */
-  virtual void removeFromSolver(tasks::qp::QPSolver & solver) override;
-
-  bool inSolver() const
+  /** Returns the tasks::qp::MotionConstr
+   *
+   * This assumes the backend was Tasks
+   */
+  inline tasks::qp::MotionConstr & motionConstr() noexcept
   {
-    return inSolver_;
+    assert(backend_ == QPSolver::Backend::Tasks);
+    return *static_cast<tasks::qp::MotionConstr *>(motion_constr_.get());
   }
 
-  unsigned int robotIndex() const
+  /** Returns the mc_tvm::DynamicFunction
+   *
+   * Assumes the backend was TVM
+   */
+  inline mc_tvm::DynamicFunction & dynamicFunction()
+  {
+    assert(backend_ == QPSolver::Backend::TVM);
+    return *(static_cast<mc_tvm::DynamicFunctionPtr *>(motion_constr_.get())->get());
+  }
+
+  void addToSolverImpl(QPSolver & solver) override;
+
+  void removeFromSolverImpl(QPSolver & solver) override;
+
+  inline unsigned int robotIndex() const noexcept
   {
     return robotIndex_;
   }
 
-public:
-  /** Motion constraint: if the robot contains flexibilites, it will take them
-   * into account, else will be a classical one **/
-  std::shared_ptr<tasks::qp::MotionConstr> motionConstr;
-
-public:
-  /** \deprecated{Default constructor, not made for general usage}
+protected:
+  /** Holds the motion constraint implementation
+   *
+   * In Tasks backend:
+   * - tasks::qp::MotionConstr or a derived constraint if the robot has flexibilities
+   *
+   * In TVM backend:
+   * - mc_tvm::DynamicFunctionPtr
    */
-  DynamicsConstraint() {}
-
-private:
-  /** Private function to build the proper MotionConstr */
-  void build_constr(const mc_rbdyn::Robots & robots, unsigned int robotIndex, bool infTorque, double timeStep);
-  /** Boolean: is this constraint inserted in the solver? */
-  bool inSolver_;
+  mc_rtc::void_ptr motion_constr_;
   /** Robot index for the constraint */
   unsigned int robotIndex_;
 };

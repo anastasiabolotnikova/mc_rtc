@@ -15,7 +15,9 @@ namespace bfs = boost::filesystem;
 #include <mc_tasks/ComplianceTask.h>
 #include <mc_tasks/EndEffectorTask.h>
 #include <mc_tasks/ExactCubicTrajectoryTask.h>
+#include <mc_tasks/FirstOrderImpedanceTask.h>
 #include <mc_tasks/GazeTask.h>
+#include <mc_tasks/ImpedanceTask.h>
 #include <mc_tasks/LookAtFrameTask.h>
 #include <mc_tasks/LookAtTask.h>
 #include <mc_tasks/MomentumTask.h>
@@ -30,6 +32,8 @@ namespace bfs = boost::filesystem;
 
 #include <mc_tasks/MetaTaskLoader.h>
 
+#include <mc_solver/TasksQPSolver.h>
+
 #include "utils.h"
 
 static bool configured = configureRobotLoader();
@@ -39,7 +43,7 @@ static auto em =
     mc_rbdyn::RobotLoader::get_robot_module("env", std::string(mc_rtc::MC_ENV_DESCRIPTION_PATH), std::string("ground"));
 static auto robots = mc_rbdyn::loadRobotAndEnv(*rm, *em);
 static std::unique_ptr<mc_solver::QPSolver> solver_ptr = [](mc_rbdyn::RobotsPtr robots) {
-  std::unique_ptr<mc_solver::QPSolver> solver(new mc_solver::QPSolver(robots, 0.005));
+  std::unique_ptr<mc_solver::TasksQPSolver> solver(new mc_solver::TasksQPSolver(robots, 0.005));
   solver->logger(std::make_shared<mc_rtc::Logger>(mc_rtc::Logger::Policy::NON_THREADED, ".", ""));
   solver->logger()->start("schema-examples", 0.005);
   solver->gui(std::make_shared<mc_rtc::gui::StateBuilder>());
@@ -99,7 +103,9 @@ TEST_TASK(mc_tasks::CoMTask, CoMTask)
 TEST_TASK(mc_tasks::force::CoPTask, CoPTask)
 TEST_TASK(mc_tasks::EndEffectorTask, EndEffectorTask)
 TEST_TASK(mc_tasks::ExactCubicTrajectoryTask, ExactCubicTrajectoryTask)
+TEST_TASK(mc_tasks::force::FirstOrderImpedanceTask, FirstOrderImpedanceTask)
 TEST_TASK(mc_tasks::GazeTask, GazeTask)
+TEST_TASK(mc_tasks::force::ImpedanceTask, ImpedanceTask)
 TEST_TASK(mc_tasks::lipm_stabilizer::StabilizerTask, LIPMStabilizerTask)
 TEST_TASK(mc_tasks::LookAtFrameTask, LookAtFrameTask)
 TEST_TASK(mc_tasks::LookAtTask, LookAtTask)

@@ -29,6 +29,10 @@ add_executable(testQuadraticGenerator testQuadraticGenerator.cpp)
 set_target_properties(testQuadraticGenerator PROPERTIES FOLDER tests/utility)
 target_link_libraries(testQuadraticGenerator PUBLIC mc_rbdyn)
 
+add_executable(testNotify testNotify.cpp)
+set_target_properties(testNotify PROPERTIES FOLDER tests/utility)
+target_link_libraries(testNotify PUBLIC mc_rtc_utils)
+
 #################################
 # -- Framework utility tests -- #
 #################################
@@ -82,9 +86,12 @@ mc_rtc_test(test_io_utils mc_rtc_utils)
 get_filename_component(EXAMPLE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../doc/_examples" ABSOLUTE)
 mc_rtc_test(testSchemaExamples mc_tasks)
 mc_rtc_test(testLogger mc_rbdyn)
+mc_rtc_test(testLogUtils mc_rbdyn)
 mc_rtc_test(testRobotModule mc_rbdyn)
 find_description_package(jvrc_description)
 set_target_properties(testRobotModule PROPERTIES COMPILE_FLAGS "-DJVRC_DESCRIPTION_PATH=\"${JVRC_DESCRIPTION_PATH}\"")
+mc_rtc_test(testCanonicalRobot mc_rbdyn)
+mc_rtc_test(testSolverBackend mc_tasks)
 
 ###########################
 # -- FSM related tests -- #

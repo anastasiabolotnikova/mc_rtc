@@ -1,26 +1,156 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #include <mc_solver/CoMIncPlaneConstr.h>
+
 #include <mc_solver/ConstraintSetLoader.h>
+#include <mc_solver/TVMQPSolver.h>
+#include <mc_solver/TasksQPSolver.h>
+
+#include <mc_tvm/CoMInConvexFunction.h>
+
+#include <Tasks/QPConstr.h>
+
+#include <tvm/task_dynamics/VelocityDamper.h>
 
 namespace mc_solver
 {
 
+namespace details
+{
+
+struct TVMCoMIncPlaneConstr
+{
+  mc_tvm::CoMInConvexFunctionPtr function_;
+  tvm::task_dynamics::VelocityDamper::Config config_{0.05, 0.01, 0.1, 0.0};
+  tvm::TaskWithRequirementsPtr constraint_;
+
+  TVMCoMIncPlaneConstr(const mc_rbdyn::Robot & robot) : function_(std::make_shared<mc_tvm::CoMInConvexFunction>(robot))
+  {
+  }
+
+  void addToSolver(mc_solver::TVMQPSolver & solver)
+  {
+    constraint_ = solver.problem().add(function_ >= 0., tvm::task_dynamics::VelocityDamper(solver.dt(), config_),
+                                       {tvm::requirements::PriorityLevel(0)});
+  }
+
+  void removeFromSolver(mc_solver::TVMQPSolver & solver)
+  {
+    solver.problem().remove(*constraint_);
+    constraint_.reset();
+  }
+
+  void setPlanes(mc_solver::TVMQPSolver & solver,
+                 const std::vector<mc_rbdyn::Plane> & planes,
+                 const std::vector<Eigen::Vector3d> & speeds,
+                 const std::vector<Eigen::Vector3d> & normalsDots,
+                 tvm::task_dynamics::VelocityDamper::Config config)
+  {
+    auto isNewConfig = [&]() {
+      return config_.di_ != config.di_ || config_.ds_ != config.ds_ || config_.xsi_ != config.xsi_
+             || config_.xsiOff_ != config.xsiOff_;
+    };
+    bool needInsertion = constraint_ != nullptr && (planes.size() != function_->planes().size() || isNewConfig());
+    config_ = config;
+    if(needInsertion)
+    {
+      removeFromSolver(solver);
+    }
+    const auto & fn_planes = function_->planes();
+    auto update_position = [&, this](size_t i) -> tvm::geometry::Plane & {
+      auto & plane = planes[i];
+      if(i < fn_planes.size())
+      {
+        auto & out = function_->plane(i);
+        out.position(plane.normal, plane.offset);
+        return out;
+      }
+      else
+      {
+        auto out = std::make_shared<tvm::geometry::Plane>(plane.normal, plane.offset);
+        function_->addPlane(out);
+        return *out;
+      }
+    };
+    if(speeds.size() != 0 && speeds.size() == planes.size() && normalsDots.size() == planes.size())
+    {
+      for(size_t i = 0; i < planes.size(); ++i)
+      {
+        auto & fn_plane = update_position(i);
+        fn_plane.velocity(speeds[i], normalsDots[i]);
+      }
+    }
+    else
+    {
+      for(size_t i = 0; i < planes.size(); ++i)
+      {
+        update_position(i);
+      }
+    }
+    if(needInsertion)
+    {
+      addToSolver(solver);
+    }
+  }
+};
+
+} // namespace details
+
+/** Helper to cast the constraint */
+static inline mc_rtc::void_ptr_caster<tasks::qp::CoMIncPlaneConstr> tasks_constraint{};
+static inline mc_rtc::void_ptr_caster<details::TVMCoMIncPlaneConstr> tvm_constraint{};
+
+static mc_rtc::void_ptr make_constraint(QPSolver::Backend backend,
+                                        const mc_rbdyn::Robots & robots,
+                                        unsigned int robotIndex,
+                                        double dt)
+{
+  switch(backend)
+  {
+    case QPSolver::Backend::Tasks:
+      return mc_rtc::make_void_ptr<tasks::qp::CoMIncPlaneConstr>(robots.mbs(), static_cast<int>(robotIndex), dt);
+    case QPSolver::Backend::TVM:
+      return mc_rtc::make_void_ptr<details::TVMCoMIncPlaneConstr>(robots.robot(robotIndex));
+    default:
+      mc_rtc::log::error_and_throw("[CoMIncPlaneConstr] Not implemented for solver backend: {}", backend);
+  }
+}
+
 CoMIncPlaneConstr::CoMIncPlaneConstr(const mc_rbdyn::Robots & robots, unsigned int robotIndex, double dt)
-: constr(new tasks::qp::CoMIncPlaneConstr(robots.mbs(), static_cast<int>(robotIndex), dt))
+: constraint_(make_constraint(backend_, robots, robotIndex, dt))
 {
 }
 
-void CoMIncPlaneConstr::addToSolver(const std::vector<rbd::MultiBody> & mbs, tasks::qp::QPSolver & solver)
+void CoMIncPlaneConstr::addToSolverImpl(QPSolver & solver)
 {
-  constr->addToSolver(mbs, solver);
+  switch(backend_)
+  {
+    case QPSolver::Backend::Tasks:
+      tasks_constraint(constraint_)->addToSolver(solver.robots().mbs(), tasks_solver(solver).solver());
+      break;
+    case QPSolver::Backend::TVM:
+      tvm_constraint(constraint_)->addToSolver(tvm_solver(solver));
+      break;
+    default:
+      break;
+  }
 }
 
-void CoMIncPlaneConstr::removeFromSolver(tasks::qp::QPSolver & solver)
+void CoMIncPlaneConstr::removeFromSolverImpl(QPSolver & solver)
 {
-  constr->removeFromSolver(solver);
+  switch(backend_)
+  {
+    case QPSolver::Backend::Tasks:
+      tasks_constraint(constraint_)->removeFromSolver(tasks_solver(solver).solver());
+      break;
+    case QPSolver::Backend::TVM:
+      tvm_constraint(constraint_)->removeFromSolver(tvm_solver(solver));
+      break;
+    default:
+      break;
+  }
 }
 
 void CoMIncPlaneConstr::setPlanes(QPSolver & solver,
@@ -32,35 +162,51 @@ void CoMIncPlaneConstr::setPlanes(QPSolver & solver,
                                   double damping,
                                   double dampingOff)
 {
-  constr->reset();
-  if(speeds.size() != 0 && normalsDots.size() == speeds.size() && planes.size() == speeds.size())
+  switch(backend_)
   {
-    for(size_t i = 0; i < planes.size(); ++i)
+    case QPSolver::Backend::Tasks:
     {
-      if(planes[i].normal.norm() > 0.5)
+      auto & constr = *tasks_constraint(constraint_);
+      auto & qpsolver = tasks_solver(solver);
+      constr.reset();
+      if(speeds.size() != 0 && normalsDots.size() == speeds.size() && planes.size() == speeds.size())
       {
-        constr->addPlane(static_cast<int>(i), planes[i].normal, planes[i].offset, iDist, sDist, damping, speeds[i],
-                         normalsDots[i], dampingOff);
+        for(size_t i = 0; i < planes.size(); ++i)
+        {
+          if(planes[i].normal.norm() > 0.5)
+          {
+            constr.addPlane(static_cast<int>(i), planes[i].normal, planes[i].offset, iDist, sDist, damping, speeds[i],
+                            normalsDots[i], dampingOff);
+          }
+        }
       }
-    }
-  }
-  else
-  {
-    if(speeds.size() != 0 && (normalsDots.size() != speeds.size() || planes.size() != speeds.size()))
-    {
-      mc_rtc::log::warning("set_planes: speeds size > 0 but different from normalsDots or planes, acting as if speeds "
-                           "were not provided");
-    }
-    for(size_t i = 0; i < planes.size(); ++i)
-    {
-      if(planes[i].normal.norm() > 0.5)
+      else
       {
-        constr->addPlane(static_cast<int>(i), planes[i].normal, planes[i].offset, iDist, sDist, damping, dampingOff);
+        if(speeds.size() != 0 && (normalsDots.size() != speeds.size() || planes.size() != speeds.size()))
+        {
+          mc_rtc::log::warning(
+              "set_planes: speeds size > 0 but different from normalsDots or planes, acting as if speeds "
+              "were not provided");
+        }
+        for(size_t i = 0; i < planes.size(); ++i)
+        {
+          if(planes[i].normal.norm() > 0.5)
+          {
+            constr.addPlane(static_cast<int>(i), planes[i].normal, planes[i].offset, iDist, sDist, damping, dampingOff);
+          }
+        }
       }
+      constr.updateNrPlanes();
+      qpsolver.updateConstrSize();
+      break;
     }
+    case QPSolver::Backend::TVM:
+      tvm_constraint(constraint_)
+          ->setPlanes(tvm_solver(solver), planes, speeds, normalsDots, {iDist, sDist, damping, dampingOff});
+      break;
+    default:
+      break;
   }
-  constr->updateNrPlanes();
-  solver.updateConstrSize();
 }
 
 } // namespace mc_solver

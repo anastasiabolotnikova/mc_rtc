@@ -2,6 +2,104 @@
 
 ## [Unreleased]
 
+## [2.2.0] - 2023-02-08
+
+### Added
+
+- [mc_control] Add support for robot's specific configuration automated loading (#327)
+- [mc_control] Add support for configuration overwrite (#339)
+
+### Changes
+
+- [mc_rtc] Change notification emergency level so they disappear automatically
+
+### Fixes
+
+- [bindings] Improve incremental builds (#340)
+- [mc_control] Fix potential segfault on exit due to libraries unloading
+- [mc_control] Expose constructors for backend specific controllers
+- [mc_solver] Fix inSolver logic for ConstraintSet
+
+## [2.1.0] - 2023-01-25
+
+### Added
+
+- [mc_tasks] Added an option to disable CoP constraints in the stabilizer (#335)
+- [mc_tasks] Added FirstOrderImpedanceTask (#332)
+
+### Fixes
+
+- [mc_control_client] Fix polyhedron handling (#336)
+- [utils] Fix usage of matplotlib in older versions
+
+## [2.0.1] - 2023-01-20
+
+### Changes
+
+- [mc_rtc] Update logging format for performance purposes (#330)
+- [utils] Updated style of generated controllers (#328)
+
+### Fixes
+
+- [debian] Correctly superseeds the libmc-rtc1 package
+- [mc_tasks] Initialize target wrench in ImpedanceGains
+
+## [2.0.0] - 2023-01-13
+
+### General
+
+The TVM backend is now available (#322). When this backend is used, one can access the extra functionalities provided by [TVM].
+
+mc_tvm is also introduced. This provides [TVM] robotic functions using mc_rtc components.
+
+`mc_control::TasksController` (resp. `mc_control::fsm::TasksController` for the FSM) and `mc_control::TVMController` (resp. `mc_control::fsm::TVMController`) are available to use a specific backend and make their extra functionalities readily available.
+
+### Added
+
+- [mc_rtc] Added mc_rtc::log::notify which sends a desktop notification (#311)
+- [mc_log_ui] Add plot of RPY angles time derivative (#317)
+- [mc_tasks] Add a DCM bias accessor to the stabilizer (#310)
+- [mc_tasks] Make foot force difference control 3D in the stabilizer (#310)
+- [mc_tasks] Add PostureTask::jointWeights (#316)
+
+### Changes
+
+- [mc_control] FSM executor cannot be moved or copied to prevent misuse (#324)
+- [mc_control] Default constraints use an `std::unique_ptr` wrapper to prevent misuse (#313)
+
+### Fixes
+
+- [mc_log_ui] Fix 3D plots for recent matplotlib (#323)
+- [mc_log_ui] Fix saving of user plots for XY and 3D plots
+
+## [1.14.2] - 2022-12-06
+
+### Fixes
+
+- Ensure the context backend is always set in the controller run/reset function
+- Safeguards against inclusion of different backend's constraints
+
+## [1.14.1] - 2022-12-01
+
+### Fixes
+
+- [HalfSitController] Do not reset the self collision constraint pointer to zero
+
+## [1.14.0] - 2022-11-29
+
+### Changes
+
+- [mc_control] Introduced output robots that allow to decouple the control model from the output model (#303)
+- [mc_rbdyn] Sensors' data is now shared among all instances of a "same" robot (i.e. control/real/output/outputReal) (#303)
+- [mc_rbdyn] Sensors' data can no longer be set through the `Robot` interface (#303)
+- [mc_solver] QPSolver is now an abstract class, many implementation details of tasks/constraints are now hidden (#254)
+
+### Fixes
+
+- [GUI] Live plots now contain all data regardless of the GUI timestep (#300)
+- [mc_tasks] Make the DCM estimator compatible with external wrenches in the stabilizer (#301)
+- [mc_observers] Fix kinematic inertial IMU pose (#306)
+
 ## [1.13.0] - 2022-10-16
 
 ### Changes
@@ -525,7 +623,14 @@ mc_rtc website and tutorials are now available in [Japanese](https://jrl-umi3218
 
 Initial release
 
-[Unreleased]: https://github.com/jrl-umi3218/mc_rtc/compare/v1.13.0...HEAD
+[Unreleased]: https://github.com/jrl-umi3218/mc_rtc/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.2.0
+[2.1.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.1.0
+[2.0.1]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.0.1
+[2.0.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.0.0
+[1.14.2]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.14.2
+[1.14.1]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.14.1
+[1.14.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.14.0
 [1.13.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.13.0
 [1.12.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.12.0
 [1.11.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.11.0
@@ -547,3 +652,4 @@ Initial release
 [1.0.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.0.0
 
 [stabilizer documentation]: https://jrl-umi3218.github.io/mc_rtc/tutorials/recipes/lipm-stabilizer.html
+[TVM]: https://github.com/jrl-umi3218/tvm

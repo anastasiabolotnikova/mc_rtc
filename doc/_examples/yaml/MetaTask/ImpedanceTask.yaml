@@ -1,5 +1,5 @@
 type: impedance
-surface: RightGripper
+frame: RightGripper
 targetSurface:
   robot: ground
   surface: AllGround

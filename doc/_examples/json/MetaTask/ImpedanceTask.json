@@ -1,6 +1,6 @@
 {
   "type": "impedance",
-  "surface": "RightGripper",
+  "frame": "RightGripper",
   "target":
   {
     // Rotation expressed as RPY (in radian)

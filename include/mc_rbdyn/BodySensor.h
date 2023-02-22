@@ -99,9 +99,7 @@ struct MC_RBDYN_DLLAPI BodySensor : public Device
   /** Set the sensor's orientation reading
    *
    * \note By convention, this rotation should be given from the inertial frame
-   * (i.e. a fixed frame in the real world) to a body frame of the robot. For
-   * instance, on HRP-4 the body sensor orientation goes from the inertial
-   * frame to the "base_link" frame.
+   * (i.e. a fixed frame in the real world) to a sensor frame of the robot.
    *
    */
   inline void orientation(const Eigen::Quaterniond & orientation)
@@ -187,5 +185,10 @@ private:
 };
 
 typedef std::vector<BodySensor, Eigen::aligned_allocator<BodySensor>> BodySensorVector;
+
+inline bool operator==(const mc_rbdyn::BodySensor & lhs, const mc_rbdyn::BodySensor & rhs)
+{
+  return lhs.name() == rhs.name() && lhs.parentBody() == rhs.parentBody() && lhs.X_b_s() == rhs.X_b_s();
+}
 
 } // namespace mc_rbdyn

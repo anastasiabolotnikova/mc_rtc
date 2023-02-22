@@ -49,14 +49,12 @@ void StabilizerTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
           },
           [this](const Eigen::Vector2d & a) { copAdmittance(a); }),
       ArrayInput(
-          "Foot force difference", {"Admittance", "Damping"},
-          [this]() -> Eigen::Vector2d {
-            return {c_.dfzAdmittance, c_.dfzDamping};
-          },
-          [this](const Eigen::Vector2d & a) {
-            dfzAdmittance(a(0));
-            dfzDamping(a(1));
-          }),
+          "Foot force difference Damping", {"Fx", "Fy", "Fz"}, [this]() -> Eigen::Vector3d { return c_.dfDamping; },
+          [this](const Eigen::Vector3d & a) { dfDamping(a); }),
+      ArrayInput(
+          "Foot force difference Admittance", {"Fx", "Fy", "Fz"},
+          [this]() -> Eigen::Vector3d { return c_.dfAdmittance; },
+          [this](const Eigen::Vector3d & a) { dfAdmittance(a); }),
       ArrayInput(
           "DCM P gains", {"x", "y"}, [this]() -> const Eigen::Vector2d & { return c_.dcmPropGain; },
           [this](const Eigen::Vector2d & gains) { dcmGains(gains, c_.dcmIntegralGain, c_.dcmDerivGain); }),
@@ -98,6 +96,8 @@ void StabilizerTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
             footTasks.at(ContactState::Left)->maxAngularVel(v);
             footTasks.at(ContactState::Right)->maxAngularVel(v);
           }),
+      Checkbox(
+          "CoP constraints", [this]() { return c_.constrainCoP; }, [this]() { c_.constrainCoP = !c_.constrainCoP; }),
       ArrayInput(
           "Max cop linear velocity [m/s]",
           [this]() -> const Eigen::Vector3d & { return footTasks.at(ContactState::Left)->maxLinearVel(); },
@@ -120,6 +120,9 @@ void StabilizerTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
                  Checkbox(
                      "Enabled", [this]() { return c_.dcmBias.withDCMBias; },
                      [this]() { c_.dcmBias.withDCMBias = !c_.dcmBias.withDCMBias; }),
+                 Checkbox(
+                     "Correct DCM", [this]() { return c_.dcmBias.correctDCM; },
+                     [this]() { c_.dcmBias.correctDCM = !c_.dcmBias.correctDCM; }),
                  Checkbox(
                      "Correct CoM Pos", [this]() { return c_.dcmBias.correctCoMPos; },
                      [this]() { c_.dcmBias.correctCoMPos = !c_.dcmBias.correctCoMPos; }),
@@ -145,6 +148,7 @@ void StabilizerTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
                        c_.dcmBias.biasDriftPerSecondStd = v;
                        dcmEstimator_.setBiasDriftPerSecond(v);
                      }),
+                 ArrayLabel("Local Bias", [this]() { return dcmEstimator_.getLocalBias(); }),
                  ArrayInput(
                      "Bias Limit [m]", {"sagital", "lateral"},
                      [this]() -> const Eigen::Vector2d & { return c_.dcmBias.biasLimit; },
@@ -155,8 +159,7 @@ void StabilizerTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
                  ArrayInput(
                      "CoM bias Limit [m]", {"sagital", "lateral"},
                      [this]() -> const Eigen::Vector2d & { return c_.dcmBias.comBiasLimit; },
-                     [this](const Eigen::Vector2d & v) { c_.dcmBias.comBiasLimit = v; }),
-                 ArrayLabel("Local Bias", [this]() { return dcmEstimator_.getLocalBias(); }));
+                     [this](const Eigen::Vector2d & v) { c_.dcmBias.comBiasLimit = v; }));
   gui.addElement({"Tasks", name_, "Advanced", "Ext Wrench"},
                  Checkbox(
                      "addExpectedCoMOffset", [this]() { return c_.extWrench.addExpectedCoMOffset; },
@@ -173,6 +176,9 @@ void StabilizerTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
                  Checkbox(
                      "modifyZMPErrD", [this]() { return c_.extWrench.modifyZMPErrD; },
                      [this]() { c_.extWrench.modifyZMPErrD = !c_.extWrench.modifyZMPErrD; }),
+                 Checkbox(
+                     "excludeFromDCMBiasEst", [this]() { return c_.extWrench.excludeFromDCMBiasEst; },
+                     [this]() { c_.extWrench.excludeFromDCMBiasEst = !c_.extWrench.excludeFromDCMBiasEst; }),
                  NumberInput(
                      "Limit of comOffsetErrCoM", [this]() { return c_.extWrench.comOffsetErrCoMLimit; },
                      [this](double a) { c_.extWrench.comOffsetErrCoMLimit = a; }),
@@ -190,7 +196,9 @@ void StabilizerTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
                      [this](double a) { comOffsetLowPassCoMCutoffPeriod(a); }),
                  NumberInput(
                      "Time constant of comOffsetDerivator", [this]() { return comOffsetDerivator_.timeConstant(); },
-                     [this](double a) { comOffsetDerivatorTimeConstant(a); }));
+                     [this](double a) { comOffsetDerivatorTimeConstant(a); }),
+                 ArrayLabel("Measured CoM offset ", [this]() { return comOffsetMeasured_; }),
+                 Label("Zmp coef ", [this]() { return std::to_string(zmpCoefMeasured_); }));
 
   gui.addElement({"Tasks", name_, "Debug"}, Button("Disable", [this]() { disable(); }));
   addConfigButtons({"Tasks", name_, "Debug"});
@@ -296,10 +304,8 @@ void StabilizerTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
   gui.addElement({"Tasks", name_, "Debug"},
                  ArrayLabel("DCM average error [mm]", {"x", "y"}, [this]() { return vecFromError(dcmAverageError_); }),
                  ArrayLabel("DCM error [mm]", {"x", "y"}, [this]() { return vecFromError(dcmError_); }),
-                 ArrayLabel("Foot force difference error [mm]", {"force", "height"}, [this]() {
-                   Eigen::Vector3d dfzError = {dfzForceError_, dfzHeightError_, 0.};
-                   return vecFromError(dfzError);
-                 }));
+                 ArrayLabel("Foot force difference error [N]", {"fx", "fy", "fz"}, [this]() { return dfForceError_; }),
+                 ArrayLabel("Foot force difference error [m]", {"x", "y", "z"}, [this]() { return dfError_; }));
 
   ///// GUI MARKERS
   constexpr double ARROW_HEAD_DIAM = 0.015;
@@ -390,11 +396,11 @@ void StabilizerTask::addToLogger(mc_rtc::Logger & logger)
   MC_RTC_LOG_HELPER(name_ + "_error_dcm_average", dcmAverageError_);
   MC_RTC_LOG_HELPER(name_ + "_error_dcm_pos", dcmError_);
   MC_RTC_LOG_HELPER(name_ + "_error_dcm_vel", dcmVelError_);
-  MC_RTC_LOG_HELPER(name_ + "_error_dfz_force", dfzForceError_);
-  MC_RTC_LOG_HELPER(name_ + "_error_dfz_height", dfzHeightError_);
+  MC_RTC_LOG_HELPER(name_ + "_error_df_force", dfForceError_);
+  MC_RTC_LOG_HELPER(name_ + "_error_df_eval", dfError_);
   MC_RTC_LOG_HELPER(name_ + "_error_vdc", vdcHeightError_);
   logger.addLogEntry(name_ + "_admittance_cop", this, [this]() -> const Eigen::Vector2d & { return c_.copAdmittance; });
-  logger.addLogEntry(name_ + "_admittance_dfz", this, [this]() { return c_.dfzAdmittance; });
+  logger.addLogEntry(name_ + "_admittance_df", this, [this]() { return c_.dfAdmittance; });
   logger.addLogEntry(name_ + "_dcmDerivator_filtered", this, [this]() { return dcmDerivator_.eval(); });
   logger.addLogEntry(name_ + "_dcmDerivator_input_lp", this, [this]() { return dcmDerivator_.input_lp(); });
   logger.addLogEntry(name_ + "_dcmDerivator_input_hp", this, [this]() { return dcmDerivator_.input_hp(); });
@@ -425,7 +431,9 @@ void StabilizerTask::addToLogger(mc_rtc::Logger & logger)
   logger.addLogEntry(name_ + "_extWrench_comOffsetErr_ZMPLimit", this,
                      [this]() { return c_.extWrench.comOffsetErrZMPLimit; });
   logger.addLogEntry(name_ + "_extWrench_comOffsetDerivator", this, [this]() { return comOffsetDerivator_.eval(); });
-  logger.addLogEntry(name_ + "_dfz_damping", this, [this]() { return c_.dfzDamping; });
+  logger.addLogEntry(name_ + "_extWrench_ZMPCoefMeasured", this,
+                     [this]() -> const double & { return zmpCoefMeasured_; });
+  logger.addLogEntry(name_ + "_df_damping", this, [this]() { return c_.dfDamping; });
   logger.addLogEntry(name_ + "_fdqp_weights_ankleTorque", this,
                      [this]() { return std::pow(c_.fdqpWeights.ankleTorqueSqrt, 2); });
   logger.addLogEntry(name_ + "_fdqp_weights_netWrench", this,

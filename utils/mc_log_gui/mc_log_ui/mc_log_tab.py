@@ -144,15 +144,27 @@ class SpecialPlot(object):
     elif special_id == "rpy":
       self.__plot = self.__add_rpy
       self.label = " rpy"
+    elif special_id == "rpy_diff":
+      self.__plot = self.__add_rpy_diff
+      self.label = " rpy diff"
     elif special_id == "r":
       self.__plot = self.__add_roll
       self.label = " roll"
+    elif special_id == "r_diff":
+      self.__plot = self.__add_roll_diff
+      self.label = " roll diff"
     elif special_id == "p":
       self.__plot = self.__add_pitch
       self.label = " pitch"
+    elif special_id == "p_diff":
+      self.__plot = self.__add_pitch_diff
+      self.label = " pitch diff"
     elif special_id == "y":
       self.__plot = self.__add_yaw
       self.label = " yaw"
+    elif special_id == "y_diff":
+      self.__plot = self.__add_yaw_diff
+      self.label = " yaw diff"
     else:
       print("Cannot handle this special plot: {}".format(special_id))
     if label is not None:
@@ -168,8 +180,6 @@ class SpecialPlot(object):
       add_fn = self.figure.add_diff_plot_right
     for a in added:
       label = "{}_diff".format(a)
-      if len(added) == 1 and self.label is not None:
-        label = self.label
       if add_fn(self.figure.x_data, a, label):
         self.added.append(label)
   def __add_rpy(self):
@@ -179,6 +189,13 @@ class SpecialPlot(object):
       add_fn = self.figure.add_rpy_plot_right
     if add_fn(self.figure.x_data, self.name):
       self.added = [ "{}_{}".format(self.name, s) for s in ["roll", "pitch", "yaw"] ]
+  def __add_rpy_diff(self):
+    if self.idx == 0:
+      add_fn = self.figure.add_rpy_diff_plot_left
+    else:
+      add_fn = self.figure.add_rpy_diff_plot_right
+    if add_fn(self.figure.x_data, self.name):
+      self.added = [ "{}_{}".format(self.name, s) for s in ["roll diff", "pitch diff", "yaw diff"] ]
   def __add_roll(self):
     if self.idx == 0:
       add_fn = self.figure.add_roll_plot_left
@@ -186,6 +203,13 @@ class SpecialPlot(object):
       add_fn = self.figure.add_roll_plot_right
     if add_fn(self.figure.x_data, self.name):
       self.added = [ "{}_{}".format(self.name, "roll") ]
+  def __add_roll_diff(self):
+    if self.idx == 0:
+      add_fn = self.figure.add_roll_diff_plot_left
+    else:
+      add_fn = self.figure.add_roll_diff_plot_right
+    if add_fn(self.figure.x_data, self.name):
+      self.added = [ "{}_{}".format(self.name, "roll diff") ]
   def __add_pitch(self):
     if self.idx == 0:
       add_fn = self.figure.add_pitch_plot_left
@@ -193,6 +217,13 @@ class SpecialPlot(object):
       add_fn = self.figure.add_pitch_plot_right
     if add_fn(self.figure.x_data, self.name):
       self.added = [ "{}_{}".format(self.name, "pitch") ]
+  def __add_pitch_diff(self):
+    if self.idx == 0:
+      add_fn = self.figure.add_pitch_diff_plot_left
+    else:
+      add_fn = self.figure.add_pitch_diff_plot_right
+    if add_fn(self.figure.x_data, self.name):
+      self.added = [ "{}_{}".format(self.name, "pitch diff") ]
   def __add_yaw(self):
     if self.idx == 0:
       add_fn = self.figure.add_yaw_plot_left
@@ -200,6 +231,13 @@ class SpecialPlot(object):
       add_fn = self.figure.add_yaw_plot_right
     if add_fn(self.figure.x_data, self.name):
       self.added = [ "{}_{}".format(self.name, "yaw") ]
+  def __add_yaw_diff(self):
+    if self.idx == 0:
+      add_fn = self.figure.add_yaw_diff_plot_left
+    else:
+      add_fn = self.figure.add_yaw_diff_plot_right
+    if add_fn(self.figure.x_data, self.name):
+      self.added = [ "{}_{}".format(self.name, "yaw diff") ]
   def plot(self):
     self.__plot()
 
@@ -502,19 +540,20 @@ class MCLogTab(QtWidgets.QWidget):
     if self.data is None:
       return
     bounds = self.rm.bounds()
+    def_bound = [float('nan')]
     def setBounds(prefix):
         for i, jn in enumerate(self.rm.ref_joint_order()):
           if "{}qIn_limits_lower_{}".format(prefix, i) in self.data:
-            self.data["{}qIn_limits_lower_{}".format(prefix, i)].fill(bounds[0][jn][0])
-            self.data["{}qIn_limits_upper_{}".format(prefix, i)].fill(bounds[1][jn][0])
-            self.data["{}qOut_limits_lower_{}".format(prefix, i)].fill(bounds[0][jn][0])
-            self.data["{}qOut_limits_upper_{}".format(prefix, i)].fill(bounds[1][jn][0])
+            self.data["{}qIn_limits_lower_{}".format(prefix, i)].fill(bounds[0].get(jn, def_bound)[0])
+            self.data["{}qIn_limits_upper_{}".format(prefix, i)].fill(bounds[1].get(jn, def_bound)[0])
+            self.data["{}qOut_limits_lower_{}".format(prefix, i)].fill(bounds[0].get(jn, def_bound)[0])
+            self.data["{}qOut_limits_upper_{}".format(prefix, i)].fill(bounds[1].get(jn, def_bound)[0])
           if "{}tauIn_limits_lower_{}".format(prefix, i) in self.data:
-            self.data["{}tauIn_limits_lower_{}".format(prefix, i)].fill(bounds[4][jn][0])
-            self.data["{}tauIn_limits_upper_{}".format(prefix, i)].fill(bounds[5][jn][0])
+            self.data["{}tauIn_limits_lower_{}".format(prefix, i)].fill(bounds[4].get(jn, def_bound)[0])
+            self.data["{}tauIn_limits_upper_{}".format(prefix, i)].fill(bounds[5].get(jn, def_bound)[0])
           if "{}tauOut_limits_lower_{}".format(prefix, i) in self.data:
-            self.data["{}tauOut_limits_lower_{}".format(prefix, i)].fill(bounds[4][jn][0])
-            self.data["{}tauOut_limits_upper_{}".format(prefix, i)].fill(bounds[5][jn][0])
+            self.data["{}tauOut_limits_lower_{}".format(prefix, i)].fill(bounds[4].get(jn, def_bound)[0])
+            self.data["{}tauOut_limits_upper_{}".format(prefix, i)].fill(bounds[5].get(jn, def_bound)[0])
     if len(loaded_files) > 1:
       for f in loaded_files:
         setBounds("{}_".format(f))
@@ -609,15 +648,20 @@ class MCLogTab(QtWidgets.QWidget):
     action.triggered.connect(lambda: RemoveSpecialPlotButton(item.actualText, self, idx, "diff", item.legendText + "_diff"))
     menu.addAction(action)
     s = re.match('^(.*)_q?[wxyz]$', item.actualText)
+    rpy_specials = [("RPY angles", "rpy"), ("ROLL angle", "r"), ("PITCH angle", "p"), ("YAW angle", "y")]
     if s is not None:
-      for item_label, axis_label in [("RPY angles", "rpy"), ("ROLL angle", "r"), ("PITCH angle", "p"), ("YAW angle", "y")]:
+      for item_label, axis_label in rpy_specials:
         action = QtWidgets.QAction(u"Plot {}".format(item_label, item.actualText), menu)
         action.triggered.connect(lambda checked, label=axis_label: RemoveSpecialPlotButton(s.group(1), self, idx, label))
+        menu.addAction(action)
+      for item_label, axis_label in rpy_specials:
+        action = QtWidgets.QAction(u"Plot {} diff".format(item_label, item.actualText), menu)
+        action.triggered.connect(lambda checked, label=axis_label: RemoveSpecialPlotButton(s.group(1), self, idx, label + "_diff"))
         menu.addAction(action)
     else:
       quat_childs = filter(lambda x: x is not None, [ re.match('{}((_.+)*)_q?w$'.format(item.actualText), x) for x in self.data.keys() ])
       for qc in quat_childs:
-        for item_label, axis_label in [("RPY angles", "rpy"), ("ROLL angle", "r"), ("PITCH angle", "p"), ("YAW angle", "y")]:
+        for item_label, axis_label in rpy_specials:
           if len(qc.group(1)):
             action_text = u"Plot {} {}".format(qc.group(1)[1:], item_label)
           else:
@@ -625,6 +669,15 @@ class MCLogTab(QtWidgets.QWidget):
           action = QtWidgets.QAction(action_text, menu)
           plot_name = item.actualText + qc.group(1)
           action.triggered.connect(lambda checked, name=plot_name, label=axis_label: RemoveSpecialPlotButton(name, self, idx, label))
+          menu.addAction(action)
+        for item_label, axis_label in rpy_specials:
+          if len(qc.group(1)):
+            action_text = u"Plot {} {} diff".format(qc.group(1)[1:], item_label)
+          else:
+            action_text = u"Plot {} diff".format(item_label)
+          action = QtWidgets.QAction(action_text, menu)
+          plot_name = item.actualText + qc.group(1)
+          action.triggered.connect(lambda checked, name=plot_name, label=axis_label: RemoveSpecialPlotButton(name, self, idx, label + "_diff"))
           menu.addAction(action)
     menu.exec_(ySelector.viewport().mapToGlobal(point))
 
@@ -719,13 +772,11 @@ class MCLogTab(QtWidgets.QWidget):
     set_label(figure.y2_label, figure.y2_label_fontsize, p.graph_labels.y2_label)
     def handle_yd(yds, idx):
       for yd in yds:
-        match = re.match("(.*)_(.*)$", yd)
-        if match is None:
-          special(yd, idx, "diff")
-        elif match.group(2) in ["rpy", "r", "p", "y"]:
-          special(match.group(1), idx, match.group(2))
-        else:
-          special(match.group(1), idx, "diff")
+        specials = ['_rpy_diff', '_r_diff', '_p_diff', '_y_diff', '_diff', '_rpy', '_r', '_p', '_y']
+        for s in specials:
+          if yd.endswith(s):
+            special(yd[:yd.rindex(s)], idx, s[1:])
+            break
     handle_yd(p.y1d, 0)
     handle_yd(p.y2d, 1)
     if not isinstance(p.grid1, LineStyle):
