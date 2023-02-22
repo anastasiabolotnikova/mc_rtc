@@ -55,6 +55,7 @@ protected:
     compute();
     const auto & A_ = A();
     auto nInEq = A_.rows();
+    //mc_rtc::log::info("nInEq {} UpdateNrVars::nrVars_ {} A \n {}", nInEq, UpdateNrVars::nrVars_, A_);
     AFull_.setZero(nInEq, UpdateNrVars::nrVars_);
     AFull_.block(0, UpdateNrVars::ABegin_, nInEq, A_.cols()) = A_;
   }

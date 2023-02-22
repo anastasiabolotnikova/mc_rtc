@@ -281,10 +281,12 @@ const sva::ForceVecd QPSolver::desiredContactForce(const mc_rbdyn::Contact & con
   {
     const auto & qp_c = qp_contact.second;
     const auto & lambdaV = lambdaVec(qp_contact.first);
+    //mc_rtc::log::warning("Lambda size for {} is {}", contact.r1Surface()->name(), lambdaV.size());
     if(lambdaV.size() > 0)
     {
       const auto & qpWrenchInBodyFrame = qp_c.force(lambdaV, qp_c.r1Points, qp_c.r1Cones);
       const auto & qpWrenchInSurfaceFrame = contact.r1Surface()->X_b_s().dualMul(qpWrenchInBodyFrame);
+      //mc_rtc::log::warning("Force is {}", qpWrenchInSurfaceFrame);
       return qpWrenchInSurfaceFrame;
     }
     else
