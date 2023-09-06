@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL, BIT
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #pragma once
@@ -55,10 +55,7 @@ struct GenInequalityConstraint : public Constraint<tasks::qp::GenInequality, Upd
   {
   }
 
-  const Eigen::MatrixXd & AGenInEq() const override
-  {
-    return this->AFull_;
-  }
+  const Eigen::MatrixXd & AGenInEq() const override { return this->AFull_; }
 
   std::string descGenInEq(const std::vector<rbd::MultiBody> &, int i) override
   {

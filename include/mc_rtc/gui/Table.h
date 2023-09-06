@@ -8,10 +8,7 @@
 #include <mc_rtc/gui/elements.h>
 #include <mc_rtc/gui/types.h>
 
-namespace mc_rtc
-{
-
-namespace gui
+namespace mc_rtc::gui
 {
 
 namespace details
@@ -36,10 +33,7 @@ struct TableImpl : public Element
   {
   }
 
-  static constexpr size_t write_size()
-  {
-    return Element::write_size() + 2;
-  }
+  static constexpr size_t write_size() { return Element::write_size() + 2; }
 
   void write(mc_rtc::MessagePackBuilder & builder)
   {
@@ -72,10 +66,7 @@ struct FormattedTableImpl : public TableImpl<GetHeader, GetData>
   {
   }
 
-  static constexpr size_t write_size()
-  {
-    return TableImpl<GetHeader, GetData>::write_size() + 1;
-  }
+  static constexpr size_t write_size() { return TableImpl<GetHeader, GetData>::write_size() + 1; }
 
   void write(mc_rtc::MessagePackBuilder & builder)
   {
@@ -109,10 +100,7 @@ struct StaticTableImpl : public Element
   {
   }
 
-  static constexpr size_t write_size()
-  {
-    return Element::write_size() + 3;
-  }
+  static constexpr size_t write_size() { return Element::write_size() + 3; }
 
   void write(mc_rtc::MessagePackBuilder & builder)
   {
@@ -132,43 +120,34 @@ private:
 
 /** Helper function to a get a StaticTableImpl */
 template<typename GetData>
-details::StaticTableImpl<GetData> Table(const std::string & name, std::vector<std::string> header, GetData get_data_fn)
+auto Table(const std::string & name, std::vector<std::string> header, GetData get_data_fn)
 {
-  return details::StaticTableImpl<GetData>(name, std::move(header), std::vector<std::string>(header.size(), "{}"),
-                                           get_data_fn);
+  return details::StaticTableImpl(name, std::move(header), std::vector<std::string>(header.size(), "{}"), get_data_fn);
 }
 
 /** Helper function to a get a StaticTableImpl with format */
 template<typename GetData>
-details::StaticTableImpl<GetData> Table(const std::string & name,
-                                        std::vector<std::string> header,
-                                        std::vector<std::string> format,
-                                        GetData get_data_fn)
+auto Table(const std::string & name,
+           std::vector<std::string> header,
+           std::vector<std::string> format,
+           GetData get_data_fn)
 {
-  while(format.size() < header.size())
-  {
-    format.push_back("{}");
-  }
-  return details::StaticTableImpl<GetData>(name, std::move(header), std::move(format), get_data_fn);
+  while(format.size() < header.size()) { format.push_back("{}"); }
+  return details::StaticTableImpl(name, std::move(header), std::move(format), get_data_fn);
 }
 
 /** Helper function to get a TableImpl */
 template<typename GetHeader, typename GetData>
-details::TableImpl<GetHeader, GetData> Table(const std::string & name, GetHeader get_header_fn, GetData get_data_fn)
+auto Table(const std::string & name, GetHeader get_header_fn, GetData get_data_fn)
 {
-  return details::TableImpl<GetHeader, GetData>(name, get_header_fn, get_data_fn);
+  return details::TableImpl(name, get_header_fn, get_data_fn);
 }
 
 /** Helper function to get a FormattedTableImpl */
 template<typename GetHeader, typename GetFormat, typename GetData>
-details::FormattedTableImpl<GetHeader, GetFormat, GetData> Table(const std::string & name,
-                                                                 GetHeader get_header_fn,
-                                                                 GetFormat get_format_fn,
-                                                                 GetData get_data_fn)
+auto Table(const std::string & name, GetHeader get_header_fn, GetFormat get_format_fn, GetData get_data_fn)
 {
-  return details::FormattedTableImpl<GetHeader, GetFormat, GetData>(name, get_header_fn, get_format_fn, get_data_fn);
+  return details::FormattedTableImpl(name, get_header_fn, get_format_fn, get_data_fn);
 }
 
-} // namespace gui
-
-} // namespace mc_rtc
+} // namespace mc_rtc::gui

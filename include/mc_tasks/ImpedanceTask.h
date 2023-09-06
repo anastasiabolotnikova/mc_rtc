@@ -1,11 +1,11 @@
 /*
- * Copyright 2015-2020 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #pragma once
 
 #include <mc_tasks/ImpedanceGains.h>
-#include <mc_tasks/SurfaceTransformTask.h>
+#include <mc_tasks/TransformTask.h>
 
 #include <mc_filter/LowPass.h>
 
@@ -49,7 +49,7 @@ namespace force
  *    https://www.springer.com/jp/book/9780792377337
  *
  */
-struct MC_TASKS_DLLAPI ImpedanceTask : SurfaceTransformTask
+struct MC_TASKS_DLLAPI ImpedanceTask : TransformTask
 {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -68,13 +68,24 @@ public:
    *
    * \throws If the body the task is attempting to control does not have a
    * sensor attached to it
-   *
    */
   ImpedanceTask(const std::string & surfaceName,
                 const mc_rbdyn::Robots & robots,
                 unsigned robotIndex,
                 double stiffness = 5.0,
                 double weight = 1000.0);
+
+  /** \brief Constructor
+   *
+   * \param frame Frame controlled by this task
+   *
+   * \param stiffness Task stiffness
+   *
+   * \param weight Task weight
+   *
+   * \throws If the frame does not have a force sensor attached to it
+   */
+  ImpedanceTask(const mc_rbdyn::RobotFrame & frame, double stiffness = 5.0, double weight = 1000.0);
 
   /*! \brief Reset the task
    *
@@ -85,58 +96,31 @@ public:
   void reset() override;
 
   /*! \brief Access the impedance gains */
-  inline const ImpedanceGains & gains() const noexcept
-  {
-    return gains_;
-  }
+  inline const ImpedanceGains & gains() const noexcept { return gains_; }
 
   /*! \brief Access the impedance gains */
-  inline ImpedanceGains & gains() noexcept
-  {
-    return gains_;
-  }
+  inline ImpedanceGains & gains() noexcept { return gains_; }
 
   /*! \brief Get the target pose of the surface in the world frame. */
-  const sva::PTransformd & targetPose() const noexcept
-  {
-    return targetPoseW_;
-  }
+  const sva::PTransformd & targetPose() const noexcept { return targetPoseW_; }
 
   /*! \brief Set the target pose of the surface in the world frame. */
-  void targetPose(const sva::PTransformd & pose)
-  {
-    targetPoseW_ = pose;
-  }
+  void targetPose(const sva::PTransformd & pose) { targetPoseW_ = pose; }
 
   /*! \brief Get the target velocity of the surface in the world frame. */
-  const sva::MotionVecd & targetVel() const noexcept
-  {
-    return targetVelW_;
-  }
+  const sva::MotionVecd & targetVel() const noexcept { return targetVelW_; }
 
   /*! \brief Set the target velocity of the surface in the world frame. */
-  void targetVel(const sva::MotionVecd & vel)
-  {
-    targetVelW_ = vel;
-  }
+  void targetVel(const sva::MotionVecd & vel) { targetVelW_ = vel; }
 
   /*! \brief Get the target acceleration of the surface in the world frame. */
-  const sva::MotionVecd & targetAccel() const noexcept
-  {
-    return targetAccelW_;
-  }
+  const sva::MotionVecd & targetAccel() const noexcept { return targetAccelW_; }
 
   /*! \brief Set the target acceleration of the surface in the world frame. */
-  void targetAccel(const sva::MotionVecd & accel)
-  {
-    targetAccelW_ = accel;
-  }
+  void targetAccel(const sva::MotionVecd & accel) { targetAccelW_ = accel; }
 
   /*! \brief Get the relative pose from target frame to compliance frame represented in the world frame. */
-  const sva::PTransformd & deltaCompliancePose() const
-  {
-    return deltaCompPoseW_;
-  }
+  const sva::PTransformd & deltaCompliancePose() const { return deltaCompPoseW_; }
 
   /*! \brief Get the compliance pose of the surface in the world frame.
    *
@@ -151,43 +135,25 @@ public:
   }
 
   /*! \brief Get the target wrench in the surface frame. */
-  const sva::ForceVecd & targetWrench() const noexcept
-  {
-    return targetWrench_;
-  }
+  const sva::ForceVecd & targetWrench() const noexcept { return targetWrench_; }
 
   /*! \brief Set the target wrench in the world frame.
    * This function will convert the wrench from the world frame to the surface frame, and call targetWrench().
    *
    */
-  void targetWrenchW(const sva::ForceVecd & wrenchW)
-  {
-    targetWrench(frame_->position().dualMul(wrenchW));
-  }
+  void targetWrenchW(const sva::ForceVecd & wrenchW) { targetWrench(frame_->position().dualMul(wrenchW)); }
 
   /*! \brief Set the target wrench in the surface frame. */
-  void targetWrench(const sva::ForceVecd & wrench)
-  {
-    targetWrench_ = wrench;
-  }
+  void targetWrench(const sva::ForceVecd & wrench) { targetWrench_ = wrench; }
 
   /*! \brief Get the measured wrench in the surface frame. */
-  const sva::ForceVecd & measuredWrench() const
-  {
-    return measuredWrench_;
-  }
+  const sva::ForceVecd & measuredWrench() const { return measuredWrench_; }
 
   /*! \brief Get the filtered measured wrench in the surface frame. */
-  const sva::ForceVecd & filteredMeasuredWrench() const
-  {
-    return filteredMeasuredWrench_;
-  }
+  const sva::ForceVecd & filteredMeasuredWrench() const { return filteredMeasuredWrench_; }
 
   /*! \brief Get the cutoff period for the low-pass filter of measured wrench. */
-  double cutoffPeriod() const
-  {
-    return lowPass_.cutoffPeriod();
-  }
+  double cutoffPeriod() const { return lowPass_.cutoffPeriod(); }
 
   /*! \brief Set the cutoff period for the low-pass filter of measured wrench. */
   void cutoffPeriod(double cutoffPeriod)
@@ -197,10 +163,7 @@ public:
   }
 
   /*! \brief Get whether hold mode is enabled. */
-  inline bool hold() const noexcept
-  {
-    return hold_;
-  }
+  inline bool hold() const noexcept { return hold_; }
 
   /*! \brief Set hold mode.
    *
@@ -212,10 +175,7 @@ public:
    * dynamics would cause the compliancePose to temporarily deviate from the commanded targetPose, causes unintended
    * movement of the end-effector.
    */
-  inline void hold(bool hold) noexcept
-  {
-    hold_ = hold;
-  }
+  inline void hold(bool hold) noexcept { hold_ = hold; }
 
   /*! \brief Load parameters from a Configuration object. */
   void load(mc_solver::QPSolver & solver, const mc_rtc::Configuration & config) override;
@@ -251,8 +211,8 @@ protected:
   sva::ForceVecd measuredWrench_ = sva::ForceVecd::Zero();
   sva::ForceVecd filteredMeasuredWrench_ = sva::ForceVecd::Zero();
 
-  mc_filter::LowPass<sva::ForceVecd> lowPass_;
   double cutoffPeriod_ = 0.05;
+  mc_filter::LowPass<sva::ForceVecd> lowPass_;
 
   // Hold mode
   bool hold_ = false;
@@ -268,9 +228,9 @@ private:
    *  Instead, the user can set the targetPose, targetVel, and targetAccel.
    *  Targets of SurfaceTransformTask are determined from the target values through the impedance equation.
    */
-  using SurfaceTransformTask::refAccel;
-  using SurfaceTransformTask::refVelB;
-  using SurfaceTransformTask::target;
+  using TransformTask::refAccel;
+  using TransformTask::refVelB;
+  using TransformTask::target;
 };
 
 } // namespace force

@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <mc_rtc/log/Logger.h>
 #include <mc_rtc/log/utils.h>
 #include <mc_rtc/utils_api.h>
 
@@ -13,15 +14,34 @@
 #include <string>
 #include <unordered_map>
 
-namespace mc_rtc
+namespace mc_rtc::log
 {
 
-namespace log
+namespace details
 {
+
+template<typename T>
+struct GetRawReturnType
+{
+  using type = T;
+};
+
+template<int N, int _Options, int _MaxRows, int _MaxCols>
+struct GetRawReturnType<Eigen::Matrix<double, N, 1, _Options, _MaxRows, _MaxCols>>
+{
+  using type = std::conditional_t<N == 2 || N == 3 || N == 6,
+                                  Eigen::Matrix<double, N, 1, _Options, _MaxRows, _MaxCols>,
+                                  Eigen::VectorXd>;
+};
+
+} // namespace details
 
 /** From an on-disk binary log recorded by mc_rtc, return a flat structure */
 struct MC_RTC_UTILS_DLLAPI FlatLog
 {
+  template<typename T>
+  using get_raw_return_t = typename details::GetRawReturnType<T>::type;
+
   /** Default constructor, empty log */
   FlatLog() = default;
 
@@ -67,7 +87,7 @@ struct MC_RTC_UTILS_DLLAPI FlatLog
    *
    */
   template<typename T>
-  std::vector<const T *> getRaw(const std::string & entry) const;
+  std::vector<const get_raw_return_t<T> *> getRaw(const std::string & entry) const;
 
   /** Get a typed record entry
    *
@@ -81,7 +101,7 @@ struct MC_RTC_UTILS_DLLAPI FlatLog
    *
    */
   template<typename T>
-  std::vector<T> get(const std::string & entry, const T & def) const;
+  std::vector<get_raw_return_t<T>> get(const std::string & entry, const T & def) const;
 
   /** Get a typed record entry
    *
@@ -93,7 +113,7 @@ struct MC_RTC_UTILS_DLLAPI FlatLog
    *
    */
   template<typename T>
-  std::vector<T> get(const std::string & entry) const;
+  std::vector<get_raw_return_t<T>> get(const std::string & entry) const;
 
   /** Get a typed record entry at a given index
    *
@@ -108,7 +128,7 @@ struct MC_RTC_UTILS_DLLAPI FlatLog
    *
    */
   template<typename T>
-  T get(const std::string & entry, size_t i, const T & def) const;
+  get_raw_return_t<T> get(const std::string & entry, size_t i, const T & def) const;
 
   /** Get a typed raw entry at a given index
    *
@@ -120,7 +140,16 @@ struct MC_RTC_UTILS_DLLAPI FlatLog
    *
    */
   template<typename T>
-  const T * getRaw(const std::string & entry, size_t i) const;
+  const get_raw_return_t<T> * getRaw(const std::string & entry, size_t i) const;
+
+  /** Returns all the GUI events that happened during the log recording */
+  inline const std::vector<std::vector<Logger::GUIEvent>> & guiEvents() const noexcept { return gui_events_; }
+
+  /** Returns the meta information contained in the log
+   *
+   * nullopt when the file does not contain such information
+   */
+  inline const std::optional<Logger::Meta> & meta() const noexcept { return meta_; }
 
   struct record
   {
@@ -142,6 +171,8 @@ struct MC_RTC_UTILS_DLLAPI FlatLog
 
 private:
   std::vector<entry> data_;
+  std::vector<std::vector<Logger::GUIEvent>> gui_events_;
+  std::optional<Logger::Meta> meta_;
 
   /** Retrieve records for a given entry */
   const std::vector<record> & at(const std::string & entry) const;
@@ -156,8 +187,6 @@ private:
   void appendBin(const std::string & fpath);
 };
 
-} // namespace log
-
-} // namespace mc_rtc
+} // namespace mc_rtc::log
 
 #include "FlatLog.hpp"

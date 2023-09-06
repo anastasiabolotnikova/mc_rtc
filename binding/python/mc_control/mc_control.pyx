@@ -69,11 +69,14 @@ cdef class Contact(object):
       self.__ctor__(*args)
   property r1:
     def __get__(self):
-      return self.impl.r1
+      if self.impl.r1.has_value():
+        return self.impl.r1.value()
+      else:
+        return None
     def __set__(self, r1):
       if isinstance(r1, unicode):
         r1 = r1.encode(u'ascii')
-      self.impl.r1 = r1
+      self.impl.r1 = <string>(r1)
   property r1Surface:
     def __get__(self):
       return self.impl.r1Surface
@@ -83,11 +86,14 @@ cdef class Contact(object):
       self.impl.r1Surface = r1Surface
   property r2:
     def __get__(self):
-      return self.impl.r2
+      if self.impl.r2.has_value():
+        return self.impl.r2.value()
+      else:
+        return None
     def __set__(self, r2):
       if isinstance(r2, unicode):
         r2 = r2.encode(u'ascii')
-      self.impl.r2 = r2
+      self.impl.r2 = <string>(r2)
   property r2Surface:
     def __get__(self):
       return self.impl.r2Surface
@@ -122,8 +128,6 @@ cdef class MCController(object):
     return self.base.run()
   def reset(self, ControllerResetData data):
     self.base.reset(deref(data.impl))
-  def robot(self):
-    return mc_rbdyn.RobotFromC(self.base.robot())
   def env(self):
     return mc_rbdyn.RobotFromC(self.base.env())
   def robots(self):
@@ -143,16 +147,16 @@ cdef class MCController(object):
       return self.base.timeStep
   property contactConstraint:
     def __get__(self):
-      return mc_solver.ContactConstraintFromPtr(&self.base.contactConstraint)
+      return mc_solver.ContactConstraintFromPtr(self.base.contactConstraint.get())
   property dynamicsConstraint:
     def __get__(self):
-      return mc_solver.DynamicsConstraintFromPtr(&self.base.dynamicsConstraint)
+      return mc_solver.DynamicsConstraintFromPtr(self.base.dynamicsConstraint.get())
   property kinematicsConstraint:
     def __get__(self):
-      return mc_solver.KinematicsConstraintFromPtr(&self.base.kinematicsConstraint)
+      return mc_solver.KinematicsConstraintFromPtr(self.base.kinematicsConstraint.get())
   property selfCollisionConstraint:
     def __get__(self):
-      return mc_solver.CollisionsConstraintFromPtr(&self.base.selfCollisionConstraint)
+      return mc_solver.CollisionsConstraintFromPtr(self.base.selfCollisionConstraint.get())
   property postureTask:
     def __get__(self):
       return mc_tasks.PostureTaskFromPtr(self.base.postureTask.get())
@@ -208,7 +212,7 @@ cdef class MCController(object):
     if isinstance(name, unicode):
       name = name.encode(u'ascii')
     if name is None:
-      return MCController.robot(self)
+      return mc_rbdyn.RobotFromC(self.base.robot())
     else:
       return mc_rbdyn.RobotFromC(self.base.robot(name))
   def addContact(self, c, *args):
@@ -337,8 +341,6 @@ cdef class MCGlobalController(object):
     self.impl.setEncoderValues(q)
   def setEncoderVelocities(self, alpha):
     self.impl.setEncoderVelocities(alpha)
-  def setFlexibilityValues(self, flex):
-    self.impl.setFlexibilityValues(flex)
   def setJointTorques(self, tau):
     self.impl.setJointTorques(tau)
   def setWrenches(self, wrenchesIn):
@@ -365,3 +367,28 @@ cdef class MCGlobalController(object):
       return self.impl.running
     def __set__(self, b):
       self.impl.running = b
+
+cdef class ElementId(object):
+  def __cinit__(self, category, name):
+    if isinstance(name, unicode):
+      name = name.encode(u'ascii')
+    self.impl = c_mc_control.ElementId([s.encode(u'ascii') if isinstance(s, unicode) else s for s in category] , name)
+  property category:
+    def __get__(self):
+      return self.impl.category
+  property name:
+    def __get__(self):
+      return self.impl.name
+
+cdef class ControllerClient(object):
+  def __cinit__(self, sub_conn_uri, push_conn_uri, timeout = 0.0):
+    if isinstance(sub_conn_uri, unicode):
+      sub_conn_uri = sub_conn_uri.encode(u'ascii')
+    if isinstance(push_conn_uri, unicode):
+      push_conn_uri = push_conn_uri.encode(u'ascii')
+    self.impl = new c_mc_control.ControllerClient(sub_conn_uri, push_conn_uri, timeout)
+  def send_request(self, element_id, data = None):
+    if data is None:
+      deref(self.impl).send_request((<ElementId>element_id).impl)
+    else:
+      deref(self.impl).send_request((<ElementId>element_id).impl, deref((<mc_rtc.Configuration>data).impl))

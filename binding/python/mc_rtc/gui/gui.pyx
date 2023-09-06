@@ -4,10 +4,12 @@
 # Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
 #
 
-cimport c_gui
+cimport mc_rtc.gui.c_gui as c_gui
 
 cimport mc_rtc.mc_rtc as mc_rtc
 cimport mc_rtc.c_mc_rtc as c_mc_rtc
+
+cimport sva.sva as sva
 
 from cython.operator cimport dereference as deref
 
@@ -166,7 +168,7 @@ cdef class DataComboInput(Element):
     self.base = &self.impl
 
 cdef class Point3D(Element):
-  cdef c_gui.Point3DROImpl[c_gui.get_fn] ro_impl
+  cdef c_gui.Point3DImpl[c_gui.get_fn, c_gui.nullptr_t] ro_impl
   cdef c_gui.Point3DImpl[c_gui.get_fn, c_gui.set_fn] impl
   cdef is_ro
   cdef _get_fn
@@ -179,7 +181,7 @@ cdef class Point3D(Element):
     self._get_fn = get_fn
     self._set_fn = set_fn
     if self.is_ro:
-      self.ro_impl = c_gui.Point3DRO[c_gui.get_fn](name, c_gui.make_getter(python_to_conf, get_fn))
+      self.ro_impl = c_gui.Point3DRO[c_gui.get_fn, c_gui.nullptr_t](name, c_gui.make_getter(python_to_conf, get_fn), NULL)
       self.base = &self.ro_impl
     else:
       self._cb_ret_type = [float]
@@ -187,7 +189,7 @@ cdef class Point3D(Element):
       self.base = &self.impl
 
 cdef class Rotation(Element):
-  cdef c_gui.RotationROImpl[c_gui.get_fn] ro_impl
+  cdef c_gui.RotationImpl[c_gui.get_fn, c_gui.nullptr_t] ro_impl
   cdef c_gui.RotationImpl[c_gui.get_fn, c_gui.set_fn] impl
   cdef is_ro
   cdef _get_fn
@@ -200,7 +202,7 @@ cdef class Rotation(Element):
     self._get_fn = get_fn
     self._set_fn = set_fn
     if self.is_ro:
-      self.ro_impl = c_gui.RotationRO[c_gui.get_fn](name, c_gui.make_getter(python_to_conf, get_fn))
+      self.ro_impl = c_gui.RotationRO[c_gui.get_fn, c_gui.nullptr_t](name, c_gui.make_getter(python_to_conf, get_fn), NULL)
       self.base = &self.ro_impl
     else:
       self._cb_ret_type = [float]
@@ -208,7 +210,7 @@ cdef class Rotation(Element):
       self.base = &self.impl
 
 cdef class Transform(Element):
-  cdef c_gui.TransformROImpl[c_gui.get_fn] ro_impl
+  cdef c_gui.TransformImpl[c_gui.get_fn, c_gui.nullptr_t] ro_impl
   cdef c_gui.TransformImpl[c_gui.get_fn, c_gui.set_fn] impl
   cdef is_ro
   cdef _get_fn
@@ -221,10 +223,10 @@ cdef class Transform(Element):
     self._get_fn = get_fn
     self._set_fn = set_fn
     if self.is_ro:
-      self.ro_impl = c_gui.TransformRO[c_gui.get_fn](name, c_gui.make_getter(python_to_conf, get_fn))
+      self.ro_impl = c_gui.TransformRO[c_gui.get_fn, c_gui.nullptr_t](name, c_gui.make_getter(python_to_conf, get_fn), NULL)
       self.base = &self.ro_impl
     else:
-      self._cb_ret_type = [float]
+      self._cb_ret_type = sva.PTransformd
       self.impl = c_gui.Transform[c_gui.get_fn,c_gui.set_fn](name, c_gui.make_getter(python_to_conf, get_fn), c_gui.make_setter(conf_to_python_list, set_fn, self._cb_ret_type))
       self.base = &self.impl
 
@@ -365,7 +367,7 @@ cdef class Form(Element):
         self.impl.addElement((<FormDataComboInput>arg).impl)
       else:
         self._elements.remove(arg)
-        print "Unsupported type {}, cannot be added to the form".format(t)
+        print("Unsupported type {}, cannot be added to the form".format(t))
 
 
 cdef class StateBuilder(object):
@@ -399,26 +401,26 @@ cdef class StateBuilder(object):
     elif t is Point3D:
       is_ro = (<Point3D>element).is_ro
       if is_ro:
-        self.impl.get().addElement[c_gui.Point3DROImpl[c_gui.get_fn]](py2cpp(category), (<Point3D>element).ro_impl)
+        self.impl.get().addElement[c_gui.Point3DImpl[c_gui.get_fn, c_gui.nullptr_t]](py2cpp(category), (<Point3D>element).ro_impl)
       else:
         self.impl.get().addElement[c_gui.Point3DImpl[c_gui.get_fn, c_gui.set_fn]](py2cpp(category), (<Point3D>element).impl)
     elif t is Rotation:
       is_ro = (<Rotation>element).is_ro
       if is_ro:
-        self.impl.get().addElement[c_gui.RotationROImpl[c_gui.get_fn]](py2cpp(category), (<Rotation>element).ro_impl)
+        self.impl.get().addElement[c_gui.RotationImpl[c_gui.get_fn, c_gui.nullptr_t]](py2cpp(category), (<Rotation>element).ro_impl)
       else:
         self.impl.get().addElement[c_gui.RotationImpl[c_gui.get_fn, c_gui.set_fn]](py2cpp(category), (<Rotation>element).impl)
     elif t is Transform:
       is_ro = (<Transform>element).is_ro
       if is_ro:
-        self.impl.get().addElement[c_gui.TransformROImpl[c_gui.get_fn]](py2cpp(category), (<Transform>element).ro_impl)
+        self.impl.get().addElement[c_gui.TransformImpl[c_gui.get_fn, c_gui.nullptr_t]](py2cpp(category), (<Transform>element).ro_impl)
       else:
         self.impl.get().addElement[c_gui.TransformImpl[c_gui.get_fn, c_gui.set_fn]](py2cpp(category), (<Transform>element).impl)
     elif t is Form:
       self.impl.get().addElement[c_gui.FormImpl[c_gui.set_fn]](py2cpp(category), (<Form>element).impl)
     else:
       StateBuilder.ELEMENTS["/".join(category)].remove(element)
-      print "Unsupported type {}, this element will not be added".format(t)
+      print("Unsupported type {}, this element will not be added".format(t))
     if len(args):
       self.addElement(category, args[0], *args[1:])
   def reset(self):

@@ -1,27 +1,42 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
-#include <mc_rbdyn/rpy_utils.h>
-#include <mc_rtc/ConfigurationHelpers.h>
-#include <mc_tasks/MetaTaskLoader.h>
 #include <mc_tasks/TransformTask.h>
 
-#include <mc_rtc/gui/Transform.h>
+#include <mc_tvm/TransformFunction.h>
 
+#include <mc_tasks/MetaTaskLoader.h>
+
+#include <mc_solver/TasksQPSolver.h>
+
+#include <mc_rbdyn/rpy_utils.h>
+
+#include <mc_rtc/ConfigurationHelpers.h>
 #include <mc_rtc/deprecated.h>
+#include <mc_rtc/gui/Transform.h>
 
 namespace mc_tasks
 {
 
+static inline mc_rtc::void_ptr_caster<tasks::qp::SurfaceTransformTask> tasks_error{};
+static inline mc_rtc::void_ptr_caster<mc_tvm::TransformFunction> tvm_error{};
+
 TransformTask::TransformTask(const mc_rbdyn::RobotFrame & frame, double stiffness, double weight)
-: TrajectoryTaskGeneric<tasks::qp::SurfaceTransformTask>(frame.robot().robots(),
-                                                         frame.robot().robotIndex(),
-                                                         stiffness,
-                                                         weight),
-  frame_(frame)
+: TrajectoryTaskGeneric(frame.robot().robots(), frame.robot().robotIndex(), stiffness, weight), frame_(frame)
 {
-  finalize(robots.mbs(), static_cast<int>(rIndex), frame.body(), frame.position(), frame.X_b_f());
+  switch(backend_)
+  {
+    case Backend::Tasks:
+      finalize<Backend::Tasks, tasks::qp::SurfaceTransformTask>(robots.mbs(), static_cast<int>(rIndex), frame.body(),
+                                                                frame.position(), frame.X_b_f());
+      break;
+    case Backend::TVM:
+      finalize<Backend::TVM, mc_tvm::TransformFunction>(frame);
+      break;
+    default:
+      mc_rtc::log::error_and_throw("[TransformTask] Not implemented for solver backend: {}", backend_);
+  }
 
   type_ = "transform";
   name_ = "transform_" + frame.robot().name() + "_" + frame.name();
@@ -39,7 +54,17 @@ TransformTask::TransformTask(const std::string & surfaceName,
 void TransformTask::reset()
 {
   TrajectoryTaskGeneric::reset();
-  errorT->target(frame_->position());
+  switch(backend_)
+  {
+    case Backend::Tasks:
+      tasks_error(errorT)->target(frame_->position());
+      break;
+    case Backend::TVM:
+      tvm_error(errorT)->reset();
+      break;
+    default:
+      break;
+  }
 }
 
 /*! \brief Load parameters from a Configuration object */
@@ -64,10 +89,7 @@ void TransformTask::load(mc_solver::QPSolver & solver, const mc_rtc::Configurati
     const auto robotIndex = robotIndexFromConfig(c, solver.robots(), name());
     target(robots.robot(robotIndex).frame(c("frame")), c("offset", sva::PTransformd::Identity()));
   }
-  else if(config.has("target"))
-  {
-    X_0_t = config("target");
-  }
+  else if(config.has("target")) { X_0_t = config("target"); }
   else if(config.has("relative"))
   {
     const auto & robot = robotFromConfig(config("relative"), solver.robots(), name());
@@ -83,14 +105,8 @@ void TransformTask::load(mc_solver::QPSolver & solver, const mc_rtc::Configurati
   }
   else
   {
-    if(config.has("targetPosition"))
-    {
-      X_0_t.translation() = config("targetPosition");
-    }
-    if(config.has("targetRotation"))
-    {
-      X_0_t.rotation() = config("targetRotation");
-    }
+    if(config.has("targetPosition")) { X_0_t.translation() = config("targetPosition"); }
+    if(config.has("targetRotation")) { X_0_t.rotation() = config("targetRotation"); }
   }
 
   if(config.has("moveWorld"))
@@ -118,12 +134,30 @@ void TransformTask::load(mc_solver::QPSolver & solver, const mc_rtc::Configurati
 
 sva::PTransformd TransformTask::target() const
 {
-  return errorT->target();
+  switch(backend_)
+  {
+    case Backend::Tasks:
+      return tasks_error(errorT)->target();
+    case Backend::TVM:
+      return tvm_error(errorT)->pose();
+    default:
+      mc_rtc::log::error_and_throw("Not implemented");
+  }
 }
 
 void TransformTask::target(const sva::PTransformd & pose)
 {
-  errorT->target(pose);
+  switch(backend_)
+  {
+    case Backend::Tasks:
+      tasks_error(errorT)->target(pose);
+      break;
+    case Backend::TVM:
+      tvm_error(errorT)->pose(pose);
+      break;
+    default:
+      break;
+  }
 }
 
 void TransformTask::targetSurface(unsigned int robotIndex,
@@ -167,20 +201,15 @@ std::function<bool(const mc_tasks::MetaTask &, std::string &)> TransformTask::bu
         dof(i) = 0.;
         target(i) = 0.;
       }
-      else if(target(i) < 0)
-      {
-        dof(i) = -1.;
-      }
+      else if(target(i) < 0) { dof(i) = -1.; }
     }
-    return [dof, target](const mc_tasks::MetaTask & t, std::string & out) {
+    return [dof, target](const mc_tasks::MetaTask & t, std::string & out)
+    {
       const auto & self = static_cast<const mc_tasks::TransformTask &>(t);
       Eigen::Vector6d w = self.robots.robot(self.rIndex).surfaceWrench(self.surface()).vector();
       for(int i = 0; i < 6; ++i)
       {
-        if(dof(i) * fabs(w(i)) < target(i))
-        {
-          return false;
-        }
+        if(dof(i) * fabs(w(i)) < target(i)) { return false; }
       }
       out += "wrench";
       return true;
@@ -191,7 +220,7 @@ std::function<bool(const mc_tasks::MetaTask &, std::string &)> TransformTask::bu
 
 void TransformTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
 {
-  TrajectoryTaskGeneric<tasks::qp::SurfaceTransformTask>::addToGUI(gui);
+  TrajectoryTaskGeneric::addToGUI(gui);
   gui.addElement({"Tasks", name_},
                  mc_rtc::gui::Transform(
                      "pos_target", [this]() { return this->target(); },
@@ -208,16 +237,14 @@ static mc_tasks::MetaTaskPtr loadTransformTask(mc_solver::QPSolver & solver, con
 {
   const auto robotIndex = robotIndexFromConfig(config, solver.robots(), "transform");
   const auto & robot = solver.robots().robot(robotIndex);
-  const auto & frame = [&]() -> const mc_rbdyn::RobotFrame & {
+  const auto & frame = [&]() -> const mc_rbdyn::RobotFrame &
+  {
     if(config.has("surface"))
     {
       mc_rtc::log::deprecated("TransformTask", "surface", "frame");
       return robot.frame(config("surface"));
     }
-    else
-    {
-      return robot.frame(config("frame"));
-    }
+    else { return robot.frame(config("frame")); }
   }();
   auto t = std::make_shared<mc_tasks::TransformTask>(frame);
   t->load(solver, config);
@@ -226,7 +253,8 @@ static mc_tasks::MetaTaskPtr loadTransformTask(mc_solver::QPSolver & solver, con
 
 static auto reg_dep = mc_tasks::MetaTaskLoader::register_load_function(
     "surfaceTransform",
-    [](mc_solver::QPSolver & solver, const mc_rtc::Configuration & config) {
+    [](mc_solver::QPSolver & solver, const mc_rtc::Configuration & config)
+    {
       mc_rtc::log::deprecated("TaskLoading", "surfaceTransform", "transform");
       return loadTransformTask(solver, config);
     });

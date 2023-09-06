@@ -10,12 +10,9 @@
 
 struct MC_CONTROL_DLLAPI FSMController : public mc_control::fsm::Controller
 {
-  FSMController(mc_rbdyn::RobotModulePtr rm, double dt, const mc_rtc::Configuration & config);
+  FSMController(mc_rbdyn::RobotModulePtr rm, double dt, const mc_rtc::Configuration & config, Backend backend);
 
   void reset(const mc_control::ControllerResetData & data) override;
 
-  void supported_robots(std::vector<std::string> & out) const override
-  {
-    out = {"jvrc1"};
-  }
+  void supported_robots(std::vector<std::string> & out) const override { out = {"jvrc1"}; }
 };

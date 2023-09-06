@@ -11,6 +11,7 @@
 
 #include "jvrc1.h"
 
+#include <mc_rbdyn/Device.h>
 #include <mc_rbdyn/RobotModuleMacros.h>
 
 #include <mc_rtc/logging.h>
@@ -25,9 +26,50 @@ namespace bfs = boost::filesystem;
 namespace mc_robots
 {
 
-JVRC1RobotModule::JVRC1RobotModule(bool fixed) : RobotModule(std::string(JVRC_VAL_VAL(JVRC_DESCRIPTION_PATH)), "jvrc1")
+mc_rbdyn::DevicePtr JVRC1DummySpeaker::clone() const
 {
-  init(rbd::parsers::from_urdf_file(urdf_path, fixed));
+  auto dummy = new JVRC1DummySpeaker(name_);
+  dummy->text_ = text_;
+  return mc_rbdyn::DevicePtr(dummy);
+}
+
+JVRC1RobotModule::JVRC1RobotModule(bool fixed, bool filter_mimics)
+: RobotModule(std::string(JVRC_VAL_VAL(JVRC_DESCRIPTION_PATH)), "jvrc1")
+{
+  _canonicalParameters = {"JVRC1"};
+
+  std::vector<std::string> filter_links = {};
+  if(filter_mimics)
+  {
+    // clang-format off
+    filter_links = {
+      "R_UTHUMB_S",
+      "R_LTHUMB_S",
+      "R_UINDEX_S",
+      "R_LINDEX_S",
+      "R_ULITTLE_S",
+      "R_LLITTLE_S",
+      "L_UTHUMB_S",
+      "L_LTHUMB_S",
+      "L_UINDEX_S",
+      "L_LINDEX_S",
+      "L_ULITTLE_S",
+      "L_LLITTLE_S"
+    };
+    // clang-format on
+  }
+  init(rbd::parsers::from_urdf_file(
+      urdf_path,
+      rbd::parsers::ParserParameters{}.fixed(fixed).filtered_links(filter_links).remove_filtered_links(true)));
+  _ref_joint_order = {"R_HIP_P",      "R_HIP_R",      "R_HIP_Y",      "R_KNEE",       "R_ANKLE_R", "R_ANKLE_P",
+                      "L_HIP_P",      "L_HIP_R",      "L_HIP_Y",      "L_KNEE",       "L_ANKLE_R", "L_ANKLE_P",
+                      "WAIST_Y",      "WAIST_P",      "WAIST_R",      "NECK_Y",       "NECK_R",    "NECK_P",
+                      "R_SHOULDER_P", "R_SHOULDER_R", "R_SHOULDER_Y", "R_ELBOW_P",    "R_ELBOW_Y", "R_WRIST_R",
+                      "R_WRIST_Y",    "R_UTHUMB",     "R_LTHUMB",     "R_UINDEX",     "R_LINDEX",  "R_ULITTLE",
+                      "R_LLITTLE",    "L_SHOULDER_P", "L_SHOULDER_R", "L_SHOULDER_Y", "L_ELBOW_P", "L_ELBOW_Y",
+                      "L_WRIST_R",    "L_WRIST_Y",    "L_UTHUMB",     "L_LTHUMB",     "L_UINDEX",  "L_LINDEX",
+                      "L_ULITTLE",    "L_LLITTLE"};
+  _devices.emplace_back(new JVRC1DummySpeaker{"DummySpeaker"});
 
   std::string convexPath = path + "/convex/" + name + "/";
   bfs::path p(convexPath);
@@ -51,10 +93,7 @@ JVRC1RobotModule::JVRC1RobotModule(bool fixed) : RobotModule(std::string(JVRC_VA
                                    0.,    0.,    0., 0.,   0.,    -0.052, 0.17,  0.,   -0.52, 0.,   0.,    0.,    0.,
                                    0.,    0.,    0., 0.,   0.,    0.,     0.,    0.,   0.,    0.,   0.};
   const auto & rjo = ref_joint_order();
-  for(size_t i = 0; i < rjo.size(); ++i)
-  {
-    _stance[rjo[i]] = {default_q[i]};
-  }
+  for(size_t i = 0; i < rjo.size(); ++i) { _stance[rjo[i]] = {default_q[i]}; }
   _default_attitude = {{1., 0., 0., 0., 0., 0., 0.8275}};
   _forceSensors.push_back(mc_rbdyn::ForceSensor("RightFootForceSensor", "R_ANKLE_P_S", sva::PTransformd::Identity()));
   _forceSensors.push_back(mc_rbdyn::ForceSensor("LeftFootForceSensor", "L_ANKLE_P_S", sva::PTransformd::Identity()));
@@ -64,10 +103,7 @@ JVRC1RobotModule::JVRC1RobotModule(bool fixed) : RobotModule(std::string(JVRC_VA
   _bodySensors.emplace_back("Accelerometer", "PELVIS_S", sva::PTransformd(Eigen::Vector3d(-0.0325, 0, 0.1095)));
   _bodySensors.emplace_back("FloatingBase", "PELVIS_S", sva::PTransformd::Identity());
 
-  for(size_t i = 0; i < rjo.size(); ++i)
-  {
-    _jointSensors.push_back(mc_rbdyn::JointSensor(rjo[i]));
-  }
+  for(size_t i = 0; i < rjo.size(); ++i) { _jointSensors.push_back(mc_rbdyn::JointSensor(rjo[i])); }
 
   _minimalSelfCollisions = {
       {"WAIST_R_S", "L_SHOULDER_Y_S", 0.02, 0.001, 0.}, {"WAIST_R_S", "R_SHOULDER_Y_S", 0.02, 0.001, 0.},
@@ -103,7 +139,7 @@ extern "C"
 {
   ROBOT_MODULE_API void MC_RTC_ROBOT_MODULE(std::vector<std::string> & names)
   {
-    names = {"JVRC1", "JVRC1Fixed"};
+    names = {"JVRC1", "JVRC1Fixed", "JVRC1NoHands", "JVRC1NoHandsFixed"};
   }
   ROBOT_MODULE_API void destroy(mc_rbdyn::RobotModule * ptr)
   {
@@ -111,14 +147,10 @@ extern "C"
   }
   ROBOT_MODULE_API mc_rbdyn::RobotModule * create(const std::string & name)
   {
-    if(name == "JVRC1")
-    {
-      return new mc_robots::JVRC1RobotModule(false);
-    }
-    else if(name == "JVRC1Fixed")
-    {
-      return new mc_robots::JVRC1RobotModule(true);
-    }
+    if(name == "JVRC1") { return new mc_robots::JVRC1RobotModule(false); }
+    else if(name == "JVRC1Fixed") { return new mc_robots::JVRC1RobotModule(true); }
+    if(name == "JVRC1NoHands") { return new mc_robots::JVRC1RobotModule(false, true); }
+    else if(name == "JVRC1NoHandsFixed") { return new mc_robots::JVRC1RobotModule(true, true); }
     else
     {
       mc_rtc::log::error("JVRC1 module Cannot create an object of type {}", name);
@@ -134,9 +166,14 @@ extern "C"
 namespace
 {
 
-static auto registered = []() {
+static auto registered = []()
+{
   using fn_t = std::function<mc_robots::JVRC1RobotModule *()>;
   mc_rbdyn::RobotLoader::register_object("JVRC1", fn_t([]() { return new mc_robots::JVRC1RobotModule(false); }));
+  mc_rbdyn::RobotLoader::register_object("JVRC1NoHands",
+                                         fn_t([]() { return new mc_robots::JVRC1RobotModule(false, true); }));
+  mc_rbdyn::RobotLoader::register_object("JVRC1NoHandsFixed",
+                                         fn_t([]() { return new mc_robots::JVRC1RobotModule(true, true); }));
   mc_rbdyn::RobotLoader::register_object("JVRC1Fixed", fn_t([]() { return new mc_robots::JVRC1RobotModule(true); }));
   return true;
 }();

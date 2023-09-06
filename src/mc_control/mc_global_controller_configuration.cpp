@@ -33,10 +33,7 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
   auto config_path = bfs::path(std::getenv("APPDATA")) / "mc_rtc/mc_rtc.conf";
 #endif
   // Load user's local configuration if it exists
-  if(!bfs::exists(config_path))
-  {
-    config_path.replace_extension(".yaml");
-  }
+  if(!bfs::exists(config_path)) { config_path.replace_extension(".yaml"); }
   if(bfs::exists(config_path))
   {
     mc_rtc::log::info("Loading additional global configuration {}", config_path.string());
@@ -60,10 +57,7 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
   //////////////
   mc_rbdyn::RobotLoader::set_verbosity(verbose_loader);
   config("RobotModulePaths", robot_module_paths);
-  if(config("ClearRobotModulePath", false))
-  {
-    mc_rbdyn::RobotLoader::clear();
-  }
+  if(config("ClearRobotModulePath", false)) { mc_rbdyn::RobotLoader::clear(); }
   if(robot_module_paths.size())
   {
     try
@@ -75,10 +69,7 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
       mc_rtc::log::error_and_throw("Failed to update robot module path(s)");
     }
   }
-  if(rm)
-  {
-    main_robot_module = rm;
-  }
+  if(rm) { main_robot_module = rm; }
   else
   {
     if(!config.has("MainRobot") || config("MainRobot").size() == 0)
@@ -107,10 +98,7 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
       {
         try
         {
-          if(params.size() == 1)
-          {
-            main_robot_module = mc_rbdyn::RobotLoader::get_robot_module(params[0]);
-          }
+          if(params.size() == 1) { main_robot_module = mc_rbdyn::RobotLoader::get_robot_module(params[0]); }
           else if(params.size() == 2)
           {
             main_robot_module = mc_rbdyn::RobotLoader::get_robot_module(params[0], params[1]);
@@ -119,10 +107,7 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
           {
             main_robot_module = mc_rbdyn::RobotLoader::get_robot_module(params[0], params[1], params[2]);
           }
-          else
-          {
-            throw mc_rtc::LoaderException("Too many parameters given to MainRobot");
-          }
+          else { throw mc_rtc::LoaderException("Too many parameters given to MainRobot"); }
         }
         catch(const mc_rtc::LoaderException &)
         {
@@ -136,20 +121,14 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
     }
   }
   main_robot_module->expand_stance();
-  if(main_robot_module->ref_joint_order().size() == 0)
-  {
-    main_robot_module->make_default_ref_joint_order();
-  }
+  if(main_robot_module->ref_joint_order().size() == 0) { main_robot_module->make_default_ref_joint_order(); }
 
   /////////////////
   //  Observers  //
   /////////////////
   mc_observers::ObserverLoader::set_verbosity(verbose_loader);
   config("ObserverModulePaths", observer_module_paths);
-  if(config("ClearObserverModulePath", false))
-  {
-    mc_observers::ObserverLoader::clear();
-  }
+  if(config("ClearObserverModulePath", false)) { mc_observers::ObserverLoader::clear(); }
   if(!observer_module_paths.empty())
   {
     try
@@ -166,18 +145,6 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
   //  Plugins  //
   ///////////////
   config("GlobalPluginPaths", global_plugin_paths);
-  std::string plugin_str = "";
-  auto append_plugin = [&plugin_str](const std::string & p, bool autoload) {
-    if(plugin_str.size())
-    {
-      plugin_str += ", ";
-    }
-    plugin_str += p;
-    if(autoload)
-    {
-      plugin_str += " (autoload)";
-    }
-  };
   if(!config("ClearGlobalPluginPath", false))
   {
     global_plugin_paths.insert(global_plugin_paths.begin(), mc_rtc::MC_PLUGINS_INSTALL_PREFIX);
@@ -199,7 +166,7 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
         if(std::find(global_plugins.begin(), global_plugins.end(), plugin) == global_plugins.end())
         {
           global_plugins.push_back(ss.str());
-          append_plugin(global_plugins.back(), true);
+          global_plugins_autoload.push_back(global_plugins.back());
         }
       }
     }
@@ -210,10 +177,8 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
     if(std::find(global_plugins.begin(), global_plugins.end(), p) == global_plugins.end())
     {
       global_plugins.push_back(p);
-      append_plugin(p, false);
     }
   }
-  mc_rtc::log::info("Enabled plugins: {}", plugin_str);
 
   ///////////////////
   //  Controllers  //
@@ -224,14 +189,8 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
     controller_module_paths.insert(controller_module_paths.begin(), mc_rtc::MC_CONTROLLER_INSTALL_PREFIX);
   }
   enabled_controllers = mc_rtc::fromVectorOrElement<std::string>(config, "Enabled", {});
-  if(enabled_controllers.size())
-  {
-    initial_controller = enabled_controllers[0];
-  }
-  else
-  {
-    mc_rtc::log::error_and_throw("Enabled entry in mc_rtc must contain at least one controller name");
-  }
+  if(enabled_controllers.size()) { initial_controller = enabled_controllers[0]; }
+  else { mc_rtc::log::error_and_throw("Enabled entry in mc_rtc must contain at least one controller name"); }
   config("Default", initial_controller);
   config("IncludeHalfSitController", include_halfsit_controller);
 
@@ -248,14 +207,8 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
   {
     std::string log_policy_str = "non-threaded";
     config("LogPolicy", log_policy_str);
-    if(log_policy_str == "threaded")
-    {
-      log_policy = mc_rtc::Logger::Policy::THREADED;
-    }
-    else if(log_policy_str == "non-threaded")
-    {
-      log_policy = mc_rtc::Logger::Policy::NON_THREADED;
-    }
+    if(log_policy_str == "threaded") { log_policy = mc_rtc::Logger::Policy::THREADED; }
+    else if(log_policy_str == "non-threaded") { log_policy = mc_rtc::Logger::Policy::NON_THREADED; }
     else
     {
       mc_rtc::log::warning("Unrecognized LogPolicy entry, will default to non-threaded");
@@ -266,10 +219,7 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
   {
     std::string v = "";
     config("LogDirectory", v);
-    if(v.size())
-    {
-      log_directory = v;
-    }
+    if(v.size()) { log_directory = v; }
   }
   config("LogTemplate", log_template);
 
@@ -281,10 +231,7 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
     auto gui_config = config("GUIServer");
     enable_gui_server = gui_config("Enable", false);
     gui_timestep = gui_config("Timestep", 0.05);
-    if(gui_timestep == 0)
-    {
-      gui_timestep = timestep;
-    }
+    if(gui_timestep == 0) { gui_timestep = timestep; }
     if(gui_config.has("IPC"))
     {
       auto ipc_config = gui_config("IPC");
@@ -292,16 +239,18 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
       gui_server_pub_uris.push_back("ipc://" + socket + "_pub.ipc");
       gui_server_rep_uris.push_back("ipc://" + socket + "_rep.ipc");
     }
-    auto handle_section =
-        [this, &gui_config](const std::string & section, const std::string & protocol, const std::string & default_host,
-                            const std::pair<unsigned int, unsigned int> & default_ports,
-                            const std::vector<unsigned int> & used_ports) -> std::vector<unsigned int> {
+    auto handle_section = [this, &gui_config](const std::string & section, const std::string & protocol,
+                                              const std::string & default_host,
+                                              const std::pair<unsigned int, unsigned int> & default_ports,
+                                              const std::vector<unsigned int> & used_ports) -> std::vector<unsigned int>
+    {
       if(gui_config.has(section))
       {
         auto prot_config = gui_config(section);
         auto host = prot_config("Host", default_host);
         auto ports = prot_config("Ports", default_ports);
-        auto check_port = [&protocol, &used_ports](unsigned int port) {
+        auto check_port = [&protocol, &used_ports](unsigned int port)
+        {
           if(std::find(used_ports.begin(), used_ports.end(), port) != used_ports.end())
           {
             mc_rtc::log::error(
@@ -331,28 +280,7 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
     auto tcp_ports = handle_section("TCP", "tcp", "*", {4242, 4343}, {});
     handle_section("WS", "ws", "*", {8080, 8081}, tcp_ports);
   }
-  else
-  {
-    enable_gui_server = false;
-  }
-  if(enable_gui_server)
-  {
-    mc_rtc::log::info("GUI server enabled");
-    mc_rtc::log::info("Will serve data on:");
-    for(const auto & pub_uri : gui_server_pub_uris)
-    {
-      mc_rtc::log::info("- {}", pub_uri);
-    }
-    mc_rtc::log::info("Will handle requests on:");
-    for(const auto & rep_uri : gui_server_rep_uris)
-    {
-      mc_rtc::log::info("- {}", rep_uri);
-    }
-  }
-  else
-  {
-    mc_rtc::log::info("GUI server disabled");
-  }
+  else { enable_gui_server = false; }
 }
 
 namespace
@@ -360,15 +288,9 @@ namespace
 
 bfs::path conf_or_yaml(bfs::path in)
 {
-  if(bfs::exists(in))
-  {
-    return in;
-  }
+  if(bfs::exists(in)) { return in; }
   in.replace_extension(".yaml");
-  if(bfs::exists(in))
-  {
-    return in;
-  }
+  if(bfs::exists(in)) { return in; }
   in.replace_extension(".yml");
   return in;
 }
@@ -385,10 +307,7 @@ inline void load_config(const std::string & desc,
 {
   mc_rtc::Configuration c;
   c.load(default_config);
-  for(const auto & k : filter)
-  {
-    c.remove(k);
-  }
+  for(const auto & k : filter) { c.remove(k); }
   for(const auto & p : search_path)
   {
     bfs::path global = conf_or_yaml(bfs::path(p) / search_path_suffix / (name + ".conf"));
@@ -416,10 +335,7 @@ inline void load_configs(const std::string & desc,
                          const mc_rtc::Configuration & default_config = {},
                          const std::initializer_list<const char *> & filter = {})
 {
-  for(const auto & name : names)
-  {
-    load_config(desc, name, search_path, user_path, configs, default_config, filter);
-  }
+  for(const auto & name : names) { load_config(desc, name, search_path, user_path, configs, default_config, filter); }
 }
 
 } // namespace
@@ -460,10 +376,7 @@ void MCGlobalController::GlobalConfiguration::load_controller_plugin_configs(con
       plugin_c = global_plugin_configs.find(plugin);
       assert(plugin_c != global_plugin_configs.end());
     }
-    if(controller.empty())
-    {
-      continue;
-    }
+    if(controller.empty()) { continue; }
     load_config("plugin", plugin, controller_module_paths, user_config / "controllers" / controller / "plugins",
                 global_plugin_configs, plugin_c->second, {}, bfs::path("etc") / controller / "plugins");
   }

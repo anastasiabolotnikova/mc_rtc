@@ -8,7 +8,7 @@
       "$ref": "/../../common/MetaTask_common.json"
     },
     {
-      "$ref": "/../../common/MetaTask_surface.json"
+      "$ref": "/../../common/MetaTask_frame.json"
     },
     {
       "$ref": "/../../common/SurfaceTransformTask.json"
@@ -35,5 +35,5 @@
       }
     }
   ],
-  "required": ["type", "surface"]
+  "required": ["type", "frame"]
 }

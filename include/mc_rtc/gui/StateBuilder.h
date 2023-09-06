@@ -350,10 +350,7 @@ struct MC_RTC_GUI_DLLAPI StateBuilder
   mc_rtc::Configuration data();
 
   /** Return the number of elements in the GUI */
-  inline size_t size() const
-  {
-    return elements_.size();
-  }
+  inline size_t size() const { return elements_.size(); }
 
 private:
   template<typename T>
@@ -408,15 +405,12 @@ private:
      * iterator to it, otherwise returns end() */
     std::vector<Category>::iterator find(const std::string & name);
     /** For each category, keeps track of the line id for next elements added */
-    int id;
+    int id = 0;
     /** Returns the number of elements in this category and its sub-categories */
     inline size_t size() const
     {
       size_t s = 0;
-      for(const auto & c : sub)
-      {
-        s += c.size();
-      }
+      for(const auto & c : sub) { s += c.size(); }
       return s + elements.size();
     }
   };

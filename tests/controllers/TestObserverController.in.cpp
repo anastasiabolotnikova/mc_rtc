@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #ifdef BOOST_TEST_MAIN
@@ -21,7 +21,7 @@ namespace mc_control
 struct MC_CONTROL_DLLAPI TestObserverController : public MCController
 {
 public:
-  TestObserverController(std::shared_ptr<mc_rbdyn::RobotModule> rm, double dt) : MCController(rm, dt)
+  TestObserverController(mc_rbdyn::RobotModulePtr rm, double dt, Backend backend) : MCController(rm, dt, backend)
   {
     // Check that the default constructor loads the robot + ground environment
     BOOST_CHECK_EQUAL(robots().size(), 2);
@@ -35,8 +35,8 @@ public:
     postureTask->stiffness(1);
     postureTask->weight(1);
     solver().addTask(postureTask.get());
-    solver().setContacts(
-        {mc_rbdyn::Contact(robots(), "LeftFoot", "AllGround"), mc_rbdyn::Contact(robots(), "RightFoot", "AllGround")});
+    addContact({"jvrc1", "ground", "LeftFoot", "AllGround"});
+    addContact({"jvrc1", "ground", "RightFoot", "AllGround"});
 
     /* Create and add the CoM task with the default stiffness/weight */
     comTask = std::make_shared<mc_tasks::CoMTask>(robots(), 0);
@@ -49,13 +49,10 @@ public:
   virtual bool run() override
   {
     // Check whether all pipelines succeeded
-    for(const auto & pipeline : observerPipelines())
-    {
-      BOOST_REQUIRE(pipeline.success());
-    }
+    for(const auto & pipeline : observerPipelines()) { BOOST_REQUIRE(pipeline.success()); }
 
-    auto checkPose = [](const std::string & prefix, const sva::PTransformd & expected,
-                        const sva::PTransformd & actual) {
+    auto checkPose = [](const std::string & prefix, const sva::PTransformd & expected, const sva::PTransformd & actual)
+    {
       BOOST_CHECK_MESSAGE(
           allclose(expected.rotation(), actual.rotation(), 1e-6),
           fmt::format("{} expected orientation [{}] but got [{}]", prefix,
@@ -83,6 +80,7 @@ public:
 
     for(const auto & joint : robot().refJointOrder())
     {
+      if(!robot().hasJoint(joint)) { continue; }
       auto j = robot().jointIndexByName(joint);
       BOOST_CHECK_CLOSE(robot().mbc().q[j][0], realRobot().mbc().q[j][0], 1e-6);
       BOOST_CHECK_CLOSE(robot().mbc().alpha[j][0], realRobot().mbc().alpha[j][0], 1e-6);
@@ -201,9 +199,10 @@ public:
     BOOST_REQUIRE(allclose(realRobot().posW().rotation(), robot().posW().rotation()));
 
     // Add anchor frame
-    datastore().make_call("KinematicAnchorFrame::" + robot().name(), [](const mc_rbdyn::Robot & robot) {
-      return sva::interpolate(robot.surfacePose("LeftFoot"), robot.surfacePose("RightFoot"), 0.5);
-    });
+    datastore().make_call("KinematicAnchorFrame::" + robot().name(),
+                          [](const mc_rbdyn::Robot & robot) {
+                            return sva::interpolate(robot.surfacePose("LeftFoot"), robot.surfacePose("RightFoot"), 0.5);
+                          });
   }
 
 private:
@@ -217,4 +216,9 @@ private:
 
 } // namespace mc_control
 
-SIMPLE_CONTROLLER_CONSTRUCTOR("TestObserverController", mc_control::TestObserverController)
+using Controller = mc_control::TestObserverController;
+using Backend = mc_control::MCController::Backend;
+MULTI_CONTROLLERS_CONSTRUCTOR("TestObserverController",
+                              Controller(rm, dt, Backend::Tasks),
+                              "TestObserverController_TVM",
+                              Controller(rm, dt, Backend::TVM))

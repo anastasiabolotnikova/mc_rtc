@@ -36,6 +36,8 @@
   id: tools
   tutorials:
     -
+      id: mc_rtc_ticker-and-replay
+    -
       id: mc_log_utils
     -
       id: mc_log_ui
@@ -80,7 +82,7 @@
   id: samples
   tutorials:
     -
-      id: list-of-samples 
+      id: list-of-samples
     -
       id: sample-admittance
 -

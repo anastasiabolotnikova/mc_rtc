@@ -12,7 +12,17 @@ namespace bfs = boost::filesystem;
 
 #include <boost/test/unit_test.hpp>
 
+#include <thread>
+
 #include "utils.h"
+
+namespace Eigen
+{
+
+using Vector7d = Eigen::Matrix<double, 7, 1>;
+using Vector8d = Eigen::Matrix<double, 8, 1>;
+
+} // namespace Eigen
 
 bool operator==(const Eigen::Quaterniond & lhs, const Eigen::Quaterniond & rhs)
 {
@@ -35,7 +45,8 @@ void check(mc_rtc::Logger & logger, Callback && cb)
 template<typename T>
 void check(const mc_rtc::log::FlatLog & log, const std::string & entry, size_t idx, const T & member)
 {
-  const T * raw = log.getRaw<T>(entry, idx);
+  auto raw = log.getRaw<T>(entry, idx);
+  BOOST_REQUIRE(log.getRaw<Eigen::Vector8d>(entry, idx) == nullptr);
   BOOST_REQUIRE(raw && *raw == member);
 }
 
@@ -49,7 +60,8 @@ private:
   mutable Eigen::Vector2d v2d = Eigen::Vector2d::Random();
   mutable Eigen::Vector3d v3d = Eigen::Vector3d::Random();
   mutable Eigen::Vector6d v6d = Eigen::Vector6d::Random();
-  mutable Eigen::VectorXd vxd = Eigen::VectorXd::Random(static_cast<Eigen::DenseIndex>(random_size()));
+  mutable Eigen::Vector7d v7d = Eigen::Vector7d::Random();
+  mutable Eigen::VectorXd vxd = Eigen::VectorXd::Random(static_cast<Eigen::DenseIndex>(random_size_except(8)));
   Eigen::Quaterniond q = random_quat();
   sva::PTransformd pt = random_pt();
   sva::ForceVecd fv = random_fv();
@@ -57,17 +69,15 @@ private:
   std::vector<double> v = random_vector();
 
 public:
-#define DEFINE_GETTER(MEMBER)                               \
-  auto get_##MEMBER() const->const decltype(this->MEMBER) & \
-  {                                                         \
-    return this->MEMBER;                                    \
-  }
+#define DEFINE_GETTER(MEMBER) \
+  auto get_##MEMBER() const->const decltype(this->MEMBER) & { return this->MEMBER; }
   DEFINE_GETTER(b)
   DEFINE_GETTER(d)
   DEFINE_GETTER(s)
   DEFINE_GETTER(v2d)
   DEFINE_GETTER(v3d)
   DEFINE_GETTER(v6d)
+  DEFINE_GETTER(v7d)
   DEFINE_GETTER(vxd)
   DEFINE_GETTER(q)
   DEFINE_GETTER(pt)
@@ -76,26 +86,18 @@ public:
   DEFINE_GETTER(v)
 #undef DEFINE_GETTER
 
-#define DEFINE_GET_AS_REF(MEMBER)                                               \
-  auto get_##MEMBER##_as_ref() const->Eigen::Ref<decltype(this->MEMBER)>        \
-  {                                                                             \
-    return this->MEMBER;                                                        \
-  }                                                                             \
-  auto get_##MEMBER##_as_cref() const->Eigen::Ref<const decltype(this->MEMBER)> \
-  {                                                                             \
-    return this->MEMBER;                                                        \
-  }
+#define DEFINE_GET_AS_REF(MEMBER)                                                                 \
+  auto get_##MEMBER##_as_ref() const->Eigen::Ref<decltype(this->MEMBER)> { return this->MEMBER; } \
+  auto get_##MEMBER##_as_cref() const->Eigen::Ref<const decltype(this->MEMBER)> { return this->MEMBER; }
   DEFINE_GET_AS_REF(v2d)
   DEFINE_GET_AS_REF(v3d)
   DEFINE_GET_AS_REF(v6d)
+  DEFINE_GET_AS_REF(v7d)
   DEFINE_GET_AS_REF(vxd)
 #undef DEFINE_GET_AS_REF
 
   /** Change data */
-  void refresh()
-  {
-    *this = LogData{};
-  }
+  void refresh() { *this = LogData{}; }
 
   void addToLogger(mc_rtc::Logger & logger, bool withSource)
   {
@@ -108,6 +110,7 @@ public:
     ADD_LOG_ENTRY("Eigen::Vector2d", v2d);
     ADD_LOG_ENTRY("Eigen::Vector3d", v3d);
     ADD_LOG_ENTRY("Eigen::Vector6d", v6d);
+    ADD_LOG_ENTRY("Eigen::Vector7d", v7d);
     ADD_LOG_ENTRY("Eigen::VectorXd", vxd);
     ADD_LOG_ENTRY("Eigen::Quaterniond", q);
     ADD_LOG_ENTRY("sva::PTransformd", pt);
@@ -127,6 +130,7 @@ public:
     ADD_LOG_ENTRY_AS_REF("v2d", v2d);
     ADD_LOG_ENTRY_AS_REF("v3d", v3d);
     ADD_LOG_ENTRY_AS_REF("v6d", v6d);
+    ADD_LOG_ENTRY_AS_REF("v7d", v7d);
     ADD_LOG_ENTRY_AS_REF("vxd", vxd);
 #undef ADD_LOG_ENTRY_AS_REF
   }
@@ -139,6 +143,7 @@ public:
     logger.addLogEntry<decltype(&LogData::v2d), &LogData::v2d>("Eigen::Vector2d", this);
     logger.addLogEntry<decltype(&LogData::v3d), &LogData::v3d>("Eigen::Vector3d", this);
     logger.addLogEntry<decltype(&LogData::v6d), &LogData::v6d>("Eigen::Vector6d", this);
+    logger.addLogEntry<decltype(&LogData::v7d), &LogData::v7d>("Eigen::Vector7d", this);
     logger.addLogEntry<decltype(&LogData::vxd), &LogData::vxd>("Eigen::VectorXd", this);
     logger.addLogEntry<decltype(&LogData::q), &LogData::q>("Eigen::Quaterniond", this);
     logger.addLogEntry<decltype(&LogData::pt), &LogData::pt>("sva::PTransformd", this);
@@ -156,6 +161,7 @@ public:
     ADD_LOG_ENTRY_AS_REF("v2d", v2d);
     ADD_LOG_ENTRY_AS_REF("v3d", v3d);
     ADD_LOG_ENTRY_AS_REF("v6d", v6d);
+    ADD_LOG_ENTRY_AS_REF("v7d", v7d);
     ADD_LOG_ENTRY_AS_REF("vxd", vxd);
 #undef ADD_LOG_ENTRY_AS_REF
   }
@@ -168,6 +174,7 @@ public:
     MC_RTC_LOG_HELPER("Eigen::Vector2d", v2d);
     MC_RTC_LOG_HELPER("Eigen::Vector3d", v3d);
     MC_RTC_LOG_HELPER("Eigen::Vector6d", v6d);
+    MC_RTC_LOG_HELPER("Eigen::Vector7d", v7d);
     MC_RTC_LOG_HELPER("Eigen::VectorXd", vxd);
     MC_RTC_LOG_HELPER("Eigen::Quaterniond", q);
     MC_RTC_LOG_HELPER("sva::PTransformd", pt);
@@ -185,6 +192,7 @@ public:
     ADD_LOG_ENTRY_AS_REF("v2d", v2d);
     ADD_LOG_ENTRY_AS_REF("v3d", v3d);
     ADD_LOG_ENTRY_AS_REF("v6d", v6d);
+    ADD_LOG_ENTRY_AS_REF("v7d", v7d);
     ADD_LOG_ENTRY_AS_REF("vxd", vxd);
 #undef ADD_LOG_ENTRY_AS_REF
   }
@@ -197,6 +205,7 @@ public:
     logger.addLogEntry<decltype(&LogData::get_v2d), &LogData::get_v2d>("Eigen::Vector2d", this);
     logger.addLogEntry<decltype(&LogData::get_v3d), &LogData::get_v3d>("Eigen::Vector3d", this);
     logger.addLogEntry<decltype(&LogData::get_v6d), &LogData::get_v6d>("Eigen::Vector6d", this);
+    logger.addLogEntry<decltype(&LogData::get_v7d), &LogData::get_v7d>("Eigen::Vector7d", this);
     logger.addLogEntry<decltype(&LogData::get_vxd), &LogData::get_vxd>("Eigen::VectorXd", this);
     logger.addLogEntry<decltype(&LogData::get_q), &LogData::get_q>("Eigen::Quaterniond", this);
     logger.addLogEntry<decltype(&LogData::get_pt), &LogData::get_pt>("sva::PTransformd", this);
@@ -209,6 +218,8 @@ public:
     logger.addLogEntry<decltype(&LogData::get_v3d_as_cref), &LogData::get_v3d_as_cref>("v3d_as_cref", this);
     logger.addLogEntry<decltype(&LogData::get_v6d_as_ref), &LogData::get_v6d_as_ref>("v6d_as_ref", this);
     logger.addLogEntry<decltype(&LogData::get_v6d_as_cref), &LogData::get_v6d_as_cref>("v6d_as_cref", this);
+    logger.addLogEntry<decltype(&LogData::get_v7d_as_ref), &LogData::get_v7d_as_ref>("v7d_as_ref", this);
+    logger.addLogEntry<decltype(&LogData::get_v7d_as_cref), &LogData::get_v7d_as_cref>("v7d_as_cref", this);
     logger.addLogEntry<decltype(&LogData::get_vxd_as_ref), &LogData::get_vxd_as_ref>("vxd_as_ref", this);
     logger.addLogEntry<decltype(&LogData::get_vxd_as_cref), &LogData::get_vxd_as_cref>("vxd_as_cref", this);
   }
@@ -221,6 +232,7 @@ public:
     MC_RTC_LOG_HELPER("Eigen::Vector2d", get_v2d);
     MC_RTC_LOG_HELPER("Eigen::Vector3d", get_v3d);
     MC_RTC_LOG_HELPER("Eigen::Vector6d", get_v6d);
+    MC_RTC_LOG_HELPER("Eigen::Vector7d", get_v7d);
     MC_RTC_LOG_HELPER("Eigen::VectorXd", get_vxd);
     MC_RTC_LOG_HELPER("Eigen::Quaterniond", get_q);
     MC_RTC_LOG_HELPER("sva::PTransformd", get_pt);
@@ -233,6 +245,8 @@ public:
     MC_RTC_LOG_HELPER("v3d_as_cref", get_v3d_as_cref);
     MC_RTC_LOG_HELPER("v6d_as_ref", get_v6d_as_ref);
     MC_RTC_LOG_HELPER("v6d_as_cref", get_v6d_as_cref);
+    MC_RTC_LOG_HELPER("v7d_as_ref", get_v7d_as_ref);
+    MC_RTC_LOG_HELPER("v7d_as_cref", get_v7d_as_cref);
     MC_RTC_LOG_HELPER("vxd_as_ref", get_vxd_as_ref);
     MC_RTC_LOG_HELPER("vxd_as_cref", get_vxd_as_cref);
   }
@@ -245,6 +259,7 @@ public:
     logger.removeLogEntry("Eigen::Vector2d");
     logger.removeLogEntry("Eigen::Vector3d");
     logger.removeLogEntry("Eigen::Vector6d");
+    logger.removeLogEntry("Eigen::Vector7d");
     logger.removeLogEntry("Eigen::VectorXd");
     logger.removeLogEntry("Eigen::Quaterniond");
     logger.removeLogEntry("sva::PTransformd");
@@ -258,6 +273,8 @@ public:
     logger.removeLogEntry("vxd_as_ref");
     logger.removeLogEntry("v6d_as_ref");
     logger.removeLogEntry("v6d_as_cref");
+    logger.removeLogEntry("v7d_as_ref");
+    logger.removeLogEntry("v7d_as_cref");
     logger.removeLogEntry("vxd_as_cref");
   }
 
@@ -272,6 +289,7 @@ public:
     ::check(log, "Eigen::Vector2d", idx, v2d);
     ::check(log, "Eigen::Vector3d", idx, v3d);
     ::check(log, "Eigen::Vector6d", idx, v6d);
+    ::check(log, "Eigen::Vector7d", idx, v7d);
     ::check(log, "Eigen::VectorXd", idx, vxd);
     ::check(log, "Eigen::Quaterniond", idx, q);
     ::check(log, "sva::PTransformd", idx, pt);
@@ -284,6 +302,8 @@ public:
     ::check(log, "v3d_as_cref", idx, v3d);
     ::check(log, "v6d_as_ref", idx, v6d);
     ::check(log, "v6d_as_cref", idx, v6d);
+    ::check(log, "v7d_as_ref", idx, v7d);
+    ::check(log, "v7d_as_cref", idx, v7d);
     ::check(log, "vxd_as_ref", idx, vxd);
     ::check(log, "vxd_as_cref", idx, vxd);
   }
@@ -297,6 +317,7 @@ public:
     BOOST_REQUIRE(log.getRaw<Eigen::Vector2d>("Eigen::Vector2d", idx) == nullptr);
     BOOST_REQUIRE(log.getRaw<Eigen::Vector3d>("Eigen::Vector3d", idx) == nullptr);
     BOOST_REQUIRE(log.getRaw<Eigen::Vector6d>("Eigen::Vector6d", idx) == nullptr);
+    BOOST_REQUIRE(log.getRaw<Eigen::Vector7d>("Eigen::Vector7d", idx) == nullptr);
     BOOST_REQUIRE(log.getRaw<Eigen::VectorXd>("Eigen::VectorXd", idx) == nullptr);
     BOOST_REQUIRE(log.getRaw<Eigen::Quaterniond>("Eigen::Quaterniond", idx) == nullptr);
     BOOST_REQUIRE(log.getRaw<sva::PTransformd>("sva::PTransformd", idx) == nullptr);
@@ -309,6 +330,8 @@ public:
     BOOST_REQUIRE(log.getRaw<Eigen::Vector3d>("v3d_as_cref", idx) == nullptr);
     BOOST_REQUIRE(log.getRaw<Eigen::Vector6d>("v6d_as_ref", idx) == nullptr);
     BOOST_REQUIRE(log.getRaw<Eigen::Vector6d>("v6d_as_cref", idx) == nullptr);
+    BOOST_REQUIRE(log.getRaw<Eigen::Vector7d>("v7d_as_ref", idx) == nullptr);
+    BOOST_REQUIRE(log.getRaw<Eigen::Vector7d>("v7d_as_cref", idx) == nullptr);
     BOOST_REQUIRE(log.getRaw<Eigen::VectorXd>("vxd_as_ref", idx) == nullptr);
     BOOST_REQUIRE(log.getRaw<Eigen::VectorXd>("vxd_as_cref", idx) == nullptr);
   }
@@ -330,162 +353,235 @@ BOOST_AUTO_TEST_CASE(TestLogger)
     logger.start("logger", 1.0);
     size_t iter = 1;
     /** Iteration 1 only time */
-    check(logger, [&](const mc_rtc::log::FlatLog & log) {
-      BOOST_REQUIRE(log.entries() == std::set<std::string>{"t"});
-      BOOST_REQUIRE(log.size() == iter);
-      auto t0 = log.getRaw<double>("t", 0);
-      BOOST_REQUIRE(t0 && *t0 == 0.0);
-      iter++;
-    });
+    check(logger,
+          [&](const mc_rtc::log::FlatLog & log)
+          {
+            BOOST_REQUIRE(log.entries() == std::set<std::string>{"t"});
+            BOOST_REQUIRE(log.size() == iter);
+            auto t0 = log.getRaw<double>("t", 0);
+            BOOST_REQUIRE(t0 && *t0 == 0.0);
+            iter++;
+          });
     /** Iteration 2, add callbacks without a source */
     LogData data;
     data.addToLogger(logger, false);
     /** Malloc is allowed in this test because we provided naive callbacks */
-    check<true>(logger, [&](const mc_rtc::log::FlatLog & log) {
-      std::set<std::string> entries = {"t",
-                                       "bool",
-                                       "double",
-                                       "std::string",
-                                       "Eigen::Vector2d",
-                                       "Eigen::Vector3d",
-                                       "Eigen::Vector6d",
-                                       "Eigen::VectorXd",
-                                       "Eigen::Quaterniond",
-                                       "sva::PTransformd",
-                                       "sva::ForceVecd",
-                                       "sva::MotionVecd",
-                                       "std::vector<double>",
-                                       "v2d_as_ref",
-                                       "v2d_as_cref",
-                                       "v3d_as_ref",
-                                       "v3d_as_cref",
-                                       "v6d_as_ref",
-                                       "v6d_as_cref",
-                                       "vxd_as_ref",
-                                       "vxd_as_cref"};
-      BOOST_REQUIRE(log.entries() == entries);
-      BOOST_REQUIRE(log.size() == iter);
-      data.check_empty(log, 0);
-      data.check(log);
-      iter++;
-    });
+    check<true>(logger,
+                [&](const mc_rtc::log::FlatLog & log)
+                {
+                  std::set<std::string> entries = {"t",
+                                                   "bool",
+                                                   "double",
+                                                   "std::string",
+                                                   "Eigen::Vector2d",
+                                                   "Eigen::Vector3d",
+                                                   "Eigen::Vector6d",
+                                                   "Eigen::Vector7d",
+                                                   "Eigen::VectorXd",
+                                                   "Eigen::Quaterniond",
+                                                   "sva::PTransformd",
+                                                   "sva::ForceVecd",
+                                                   "sva::MotionVecd",
+                                                   "std::vector<double>",
+                                                   "v2d_as_ref",
+                                                   "v2d_as_cref",
+                                                   "v3d_as_ref",
+                                                   "v3d_as_cref",
+                                                   "v6d_as_ref",
+                                                   "v6d_as_cref",
+                                                   "v7d_as_ref",
+                                                   "v7d_as_cref",
+                                                   "vxd_as_ref",
+                                                   "vxd_as_cref"};
+                  BOOST_REQUIRE(log.entries() == entries);
+                  BOOST_REQUIRE(log.size() == iter);
+                  data.check_empty(log, 0);
+                  data.check(log);
+                  iter++;
+                });
     /** Iteration 3, remove everything "manually" */
     data.removeFromLogger(logger);
-    check(logger, [&](const mc_rtc::log::FlatLog & log) {
-      BOOST_REQUIRE(log.size() == iter);
-      data.check_empty(log);
-      iter++;
-    });
+    check(logger,
+          [&](const mc_rtc::log::FlatLog & log)
+          {
+            BOOST_REQUIRE(log.size() == iter);
+            data.check_empty(log);
+            iter++;
+          });
     /** Iteration 4, add everything with a source */
     data.addToLogger(logger, true);
     /** Malloc is allowed in this test because we provided naive callbacks */
-    check<true>(logger, [&](const mc_rtc::log::FlatLog & log) {
-      BOOST_REQUIRE(log.size() == iter);
-      data.check(log);
-      iter++;
-    });
+    check<true>(logger,
+                [&](const mc_rtc::log::FlatLog & log)
+                {
+                  BOOST_REQUIRE(log.size() == iter);
+                  data.check(log);
+                  iter++;
+                });
     /** Iteration 5, remove everything via the source */
     logger.removeLogEntries(&data);
-    check(logger, [&](const mc_rtc::log::FlatLog & log) {
-      BOOST_REQUIRE(log.size() == iter);
-      data.check_empty(log);
-      iter++;
-    });
+    check(logger,
+          [&](const mc_rtc::log::FlatLog & log)
+          {
+            BOOST_REQUIRE(log.size() == iter);
+            data.check_empty(log);
+            iter++;
+          });
     /** Iteration 6 to 100, refresh data and check everything is ok */
     data.addToLogger(logger, true);
     for(iter = 6; iter <= 100; ++iter)
     {
       /** Malloc is allowed in this test because we provided naive callbacks */
-      check<true>(logger, [&](const mc_rtc::log::FlatLog & log) {
-        BOOST_REQUIRE(log.size() == iter);
-        data.check(log);
-        data.refresh();
-      });
+      check<true>(logger,
+                  [&](const mc_rtc::log::FlatLog & log)
+                  {
+                    BOOST_REQUIRE(log.size() == iter);
+                    data.check(log);
+                    data.refresh();
+                  });
     }
     /** Iteration 101, remove the data once more */
     logger.removeLogEntries(&data);
-    check(logger, [&](const mc_rtc::log::FlatLog & log) {
-      BOOST_REQUIRE(log.size() == iter);
-      data.check_empty(log);
-      iter++;
-    });
+    check(logger,
+          [&](const mc_rtc::log::FlatLog & log)
+          {
+            BOOST_REQUIRE(log.size() == iter);
+            data.check_empty(log);
+            iter++;
+          });
     /** Iteration 102 to 150, add from pointer to member, refresh data and check everything is ok */
     data.addToLoggerWithMemberPointer(logger);
     for(iter = 102; iter <= 150; ++iter)
     {
-      check(logger, [&](const mc_rtc::log::FlatLog & log) {
-        BOOST_REQUIRE(log.size() == iter);
-        data.check(log);
-        data.refresh();
-      });
+      check(logger,
+            [&](const mc_rtc::log::FlatLog & log)
+            {
+              BOOST_REQUIRE(log.size() == iter);
+              data.check(log);
+              data.refresh();
+            });
     }
     /** Iteration 151, remove the data once more */
     logger.removeLogEntries(&data);
-    check(logger, [&](const mc_rtc::log::FlatLog & log) {
-      BOOST_REQUIRE(log.size() == iter);
-      data.check_empty(log);
-      iter++;
-    });
+    check(logger,
+          [&](const mc_rtc::log::FlatLog & log)
+          {
+            BOOST_REQUIRE(log.size() == iter);
+            data.check_empty(log);
+            iter++;
+          });
     /** Iteration 152 to 200, add from pointer to method, refresh data and check everything is ok */
     data.addToLoggerWithGetter(logger);
     for(iter = 152; iter <= 200; ++iter)
     {
-      check(logger, [&](const mc_rtc::log::FlatLog & log) {
-        BOOST_REQUIRE(log.size() == iter);
-        data.check(log);
-        data.refresh();
-      });
+      check(logger,
+            [&](const mc_rtc::log::FlatLog & log)
+            {
+              BOOST_REQUIRE(log.size() == iter);
+              data.check(log);
+              data.refresh();
+            });
     }
     /** Iteration 201, remove the data once more */
     logger.removeLogEntries(&data);
-    check(logger, [&](const mc_rtc::log::FlatLog & log) {
-      BOOST_REQUIRE(log.size() == iter);
-      data.check_empty(log);
-      iter++;
-    });
+    check(logger,
+          [&](const mc_rtc::log::FlatLog & log)
+          {
+            BOOST_REQUIRE(log.size() == iter);
+            data.check_empty(log);
+            iter++;
+          });
     /** Iteration 202 to 250, add from fast pointer to member, refresh data and check everything is ok */
     data.addToLoggerWithMemberPointerMacro(logger);
     for(iter = 202; iter <= 250; ++iter)
     {
-      check(logger, [&](const mc_rtc::log::FlatLog & log) {
-        BOOST_REQUIRE(log.size() == iter);
-        data.check(log);
-        data.refresh();
-      });
+      check(logger,
+            [&](const mc_rtc::log::FlatLog & log)
+            {
+              BOOST_REQUIRE(log.size() == iter);
+              data.check(log);
+              data.refresh();
+            });
     }
     /** Iteration 251, remove the data once more */
     logger.removeLogEntries(&data);
-    check(logger, [&](const mc_rtc::log::FlatLog & log) {
-      BOOST_REQUIRE(log.size() == iter);
-      data.check_empty(log);
-      iter++;
-    });
+    check(logger,
+          [&](const mc_rtc::log::FlatLog & log)
+          {
+            BOOST_REQUIRE(log.size() == iter);
+            data.check_empty(log);
+            iter++;
+          });
     /** Iteration 252 to 300, add from fast pointer to method, refresh data and check everything is ok */
     data.addToLoggerWithGetterMacro(logger);
     for(iter = 252; iter <= 200; ++iter)
     {
-      check(logger, [&](const mc_rtc::log::FlatLog & log) {
-        BOOST_REQUIRE(log.size() == iter);
-        data.check(log);
-        data.refresh();
-      });
+      check(logger,
+            [&](const mc_rtc::log::FlatLog & log)
+            {
+              BOOST_REQUIRE(log.size() == iter);
+              data.check(log);
+              data.refresh();
+            });
     }
     /** Iteration 301, remove the data once more */
     logger.removeLogEntries(&data);
-    check(logger, [&](const mc_rtc::log::FlatLog & log) {
-      BOOST_REQUIRE(log.size() == iter);
-      data.check_empty(log);
-      iter++;
-    });
+    check(logger,
+          [&](const mc_rtc::log::FlatLog & log)
+          {
+            BOOST_REQUIRE(log.size() == iter);
+            data.check_empty(log);
+            iter++;
+          });
     path = logger.path();
   }
   auto latest = bfs::temp_directory_path() / "mc-rtc-test-logger-latest.bin";
-  if(bfs::exists(latest))
+  if(bfs::exists(latest)) { bfs::remove(latest); }
+  if(bfs::exists(path)) { bfs::remove(path); }
+}
+
+BOOST_AUTO_TEST_CASE(TestResume)
+{
+  std::string path_1;
+  std::string path_2;
+  double dt = 0.001;
   {
-    bfs::remove(latest);
+    using Policy = mc_rtc::Logger::Policy;
+    mc_rtc::Logger logger(Policy::NON_THREADED, bfs::temp_directory_path().string(), "mc-rtc-test");
+    logger.start("logger", dt);
+    path_1 = logger.path();
+    LogData data;
+    data.addToLogger(logger, true);
+    for(size_t i = 0; i < 1000; ++i)
+    {
+      logger.log();
+      data.refresh();
+    }
+    // Make sure the file will end up with different names
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    logger.start("logger", dt, true);
+    path_2 = logger.path();
+    BOOST_REQUIRE(path_1 != path_2);
+    for(size_t i = 0; i < 1000; ++i)
+    {
+      logger.log();
+      data.refresh();
+    }
   }
-  if(bfs::exists(path))
+  auto latest = bfs::temp_directory_path() / "mc-rtc-test-logger-latest.bin";
+  if(bfs::exists(latest)) { bfs::remove(latest); }
   {
-    bfs::remove(path);
+    BOOST_REQUIRE(bfs::exists(path_1));
+    BOOST_REQUIRE(bfs::exists(path_2));
+    mc_rtc::log::FlatLog flat_1(path_1);
+    BOOST_REQUIRE(flat_1.size() > 0);
+    mc_rtc::log::FlatLog flat_2(path_2);
+    BOOST_REQUIRE(flat_2.size() > 0);
+    BOOST_REQUIRE(flat_1.entries() == flat_2.entries());
+    auto final_t1 = flat_1.get<double>("t", flat_1.size() - 1, 0.0);
+    auto first_t2 = flat_2.get<double>("t", 0, 0.0);
+    BOOST_REQUIRE(std::fabs(first_t2 - final_t1 - dt) < 1e-9);
   }
+  bfs::remove(path_1);
+  bfs::remove(path_2);
 }

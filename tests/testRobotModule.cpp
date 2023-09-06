@@ -89,18 +89,9 @@ BOOST_AUTO_TEST_CASE(TestRobotModule)
   const auto & robot = robots->robot();
 
   // Check frames loading
-  for(const auto & b : robot.mb().bodies())
-  {
-    BOOST_REQUIRE(robot.hasFrame(b.name()));
-  }
-  for(const auto & s : robot.surfaces())
-  {
-    BOOST_REQUIRE(robot.hasFrame(s.first));
-  }
-  for(const auto & f : {"Camera", "Camera_RGB", "Camera_Depth"})
-  {
-    BOOST_REQUIRE(robot.hasFrame(f));
-  }
+  for(const auto & b : robot.mb().bodies()) { BOOST_REQUIRE(robot.hasFrame(b.name())); }
+  for(const auto & s : robot.surfaces()) { BOOST_REQUIRE(robot.hasFrame(s.first)); }
+  for(const auto & f : {"Camera", "Camera_RGB", "Camera_Depth"}) { BOOST_REQUIRE(robot.hasFrame(f)); }
   BOOST_REQUIRE(robot.frame("Camera").body() == "NECK_P_S");
   BOOST_REQUIRE(robot.frame("Camera").parent());
   BOOST_REQUIRE(robot.frame("Camera").parent()->name() == "NECK_P_S");
@@ -112,9 +103,7 @@ BOOST_AUTO_TEST_CASE(TestRobotModule)
   BOOST_REQUIRE(robot.frame("Camera_RGB").parent()->name() == "Camera_Depth");
 
   // Check grippers
-  BOOST_REQUIRE(robot.grippers().size() == 2);
-  BOOST_REQUIRE(robot.hasGripper("l_gripper"));
-  BOOST_REQUIRE(robot.hasGripper("r_gripper"));
+  BOOST_REQUIRE(robot.module().grippers().size() == 2);
 
   // Check force sensors
   BOOST_REQUIRE(robot.forceSensors().size() == 4);
@@ -125,8 +114,5 @@ BOOST_AUTO_TEST_CASE(TestRobotModule)
 
   // Check body sensors
   BOOST_REQUIRE(robot.bodySensors().size() == 2);
-  for(const auto & bs : {"Accelerometer", "FloatingBase"})
-  {
-    BOOST_REQUIRE(robot.hasBodySensor(bs));
-  }
+  for(const auto & bs : {"Accelerometer", "FloatingBase"}) { BOOST_REQUIRE(robot.hasBodySensor(bs)); }
 }

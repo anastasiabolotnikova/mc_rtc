@@ -91,6 +91,12 @@ IMPL_MAPPING(mc_rbdyn::Gains6d, Vector6d);
 
 #undef IMPL_MAPPING
 
+template<int N, int _Options, int _MaxRows, int _MaxCols>
+struct GetLogType<Eigen::Matrix<double, N, 1, _Options, _MaxRows, _MaxCols>>
+{
+  static constexpr mc_rtc::log::LogType type = mc_rtc::log::LogType::VectorXd;
+};
+
 template<typename A>
 struct GetLogType<std::vector<double, A>>
 {
@@ -120,6 +126,7 @@ struct GetLogType<Eigen::Ref<Type, Options, StrideType>>
 template<typename T>
 struct is_serializable
 {
+  static constexpr LogType type = GetLogType<T>::type;
   static constexpr bool value = GetLogType<T>::type != mc_rtc::log::LogType::None;
 };
 
@@ -167,6 +174,7 @@ struct callback_is_serializable<T, void_t<typename std::result_of<T()>::type>>
 {
   using ret_type = typename std::result_of<T()>::type;
   using base_type = typename std::decay<ret_type>::type;
+  static constexpr LogType log_type = is_serializable<base_type>::type;
   static constexpr bool value = is_serializable<base_type>::value;
 };
 
@@ -174,12 +182,51 @@ struct callback_is_serializable<T, void_t<typename std::result_of<T()>::type>>
 template<typename T>
 struct LogWriter
 {
-  static void write(const T & data, mc_rtc::MessagePackBuilder & builder)
-  {
-    builder.write(static_cast<typename std::underlying_type<LogType>::type>(GetLogType<T>::type));
-    builder.write(data);
-  }
+  static void write(const T & data, mc_rtc::MessagePackBuilder & builder) { builder.write(data); }
 };
+
+/** Provide a correspondance from a log type to a C++ type */
+template<LogType type>
+struct log_type_to_type
+{
+  static_assert(static_cast<std::underlying_type_t<LogType>>(type)
+                    == std::numeric_limits<std::underlying_type_t<LogType>>::max(),
+                "This must be specialized for the provided LogType value");
+};
+
+#define IMPL_MAPPING(ENUMV, CPPT)         \
+  template<>                              \
+  struct log_type_to_type<LogType::ENUMV> \
+  {                                       \
+    using type = CPPT;                    \
+  }
+
+IMPL_MAPPING(Bool, bool);
+IMPL_MAPPING(Int8_t, int8_t);
+IMPL_MAPPING(Int16_t, int16_t);
+IMPL_MAPPING(Int32_t, int32_t);
+IMPL_MAPPING(Int64_t, int64_t);
+IMPL_MAPPING(Uint8_t, uint8_t);
+IMPL_MAPPING(Uint16_t, uint16_t);
+IMPL_MAPPING(Uint32_t, uint32_t);
+IMPL_MAPPING(Uint64_t, uint64_t);
+IMPL_MAPPING(Float, float);
+IMPL_MAPPING(Double, double);
+IMPL_MAPPING(String, std::string);
+IMPL_MAPPING(Vector2d, Eigen::Vector2d);
+IMPL_MAPPING(Vector3d, Eigen::Vector3d);
+IMPL_MAPPING(Vector6d, Eigen::Vector6d);
+IMPL_MAPPING(VectorXd, Eigen::VectorXd);
+IMPL_MAPPING(Quaterniond, Eigen::Quaterniond);
+IMPL_MAPPING(PTransformd, sva::PTransformd);
+IMPL_MAPPING(ForceVecd, sva::ForceVecd);
+IMPL_MAPPING(MotionVecd, sva::MotionVecd);
+IMPL_MAPPING(VectorDouble, std::vector<double>);
+
+#undef IMPL_MAPPING
+
+template<LogType type>
+using log_type_to_type_t = typename log_type_to_type<type>::type;
 
 } // namespace log
 

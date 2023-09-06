@@ -8,8 +8,11 @@
 #include <mc_rtc/logging.h>
 #include <mc_rtc/utils_api.h>
 
+#include <mc_rtc/Configuration.h>
+
 #include <memory>
 #include <unordered_map>
+#include <variant>
 
 namespace mc_rtc
 {
@@ -28,6 +31,11 @@ struct MC_RTC_UTILS_DLLAPI Logger
 public:
   /** Magic number used to identify binary logs */
   static const uint8_t magic[4];
+  /** Version of the log format
+   *
+   * This is stored in the binary file as data[3] - magic[3]
+   */
+  static const uint8_t version;
   /** A function that fills LogData vectors */
   typedef std::function<void(mc_rtc::MessagePackBuilder &)> serialize_fn;
   /*! \brief Defines available policies for the logger */
@@ -49,6 +57,58 @@ public:
      * crashes. This is intended for real-time environments.
      */
     THREADED = 1
+  };
+
+  /*! \brief Data for a key added event */
+  struct KeyAddedEvent
+  {
+    /** Type of the key being added */
+    log::LogType type;
+    /** Name of the key being added */
+    std::string key;
+  };
+
+  /*! \brief Data for a key removed event */
+  struct KeyRemovedEvent
+  {
+    /** Name of the key being removed */
+    std::string key;
+  };
+
+  /*! \brief GUI callback event */
+  struct GUIEvent
+  {
+    /** Category of the item */
+    std::vector<std::string> category;
+    /** Name of the time */
+    std::string name;
+    /** Payload of the callback */
+    mc_rtc::Configuration data;
+  };
+
+  /*! \brief Start event
+   *
+   * By construction this should appear only once in the log
+   *
+   * In the current implementation this writes \ref Meta into the log
+   */
+  struct StartEvent
+  {
+  };
+
+  using LogEvent = std::variant<KeyAddedEvent, KeyRemovedEvent, GUIEvent, StartEvent>;
+
+  /*! \brief Log meta data written in the first call to \ref log after a call to \start */
+  struct Meta
+  {
+    /** Timestep of the log */
+    double timestep;
+    /** Name of the main robot this reports */
+    std::string main_robot;
+    /** Module parameters for the main robot */
+    std::vector<std::string> main_robot_module;
+    /** Initial position of robots in the world */
+    std::map<std::string, sva::PTransformd> init;
   };
 
 public:
@@ -74,6 +134,12 @@ public:
    * \param tmpl Log file template
    */
   void setup(const Policy & policy, const std::string & directory, const std::string & tmpl);
+
+  /*! \brief Access the log's metadata */
+  inline Meta & meta() noexcept { return meta_; }
+
+  /*! \brief Access the log's metadata (const) */
+  inline const Meta & meta() const noexcept { return meta_; }
 
   /*! \brief Start logging
    *
@@ -129,23 +195,31 @@ public:
    *
    * \param get_fn A function that provides data that should be logged
    *
+   * \param overwrite If true, overwrite the previous entry of the same name (if any), otherwise log and return
+   *
    */
   template<typename CallbackT,
            typename SourceT = void,
            typename std::enable_if<mc_rtc::log::callback_is_serializable<CallbackT>::value, int>::type = 0>
-  void addLogEntry(const std::string & name, const SourceT * source, CallbackT && get_fn)
+  void addLogEntry(const std::string & name, const SourceT * source, CallbackT && get_fn, bool overwrite = false)
   {
     using ret_t = decltype(get_fn());
     using base_t = typename std::decay<ret_t>::type;
-    if(log_entries_.count(name))
+    auto it = find_entry(name);
+    if(it != log_entries_.end())
     {
-      log::error("Already logging an entry named {}", name);
-      return;
+      if(!overwrite)
+      {
+        log::error("Already logging an entry named {}", name);
+        return;
+      }
+      else { log_entries_.erase(it); }
     }
-    log_entries_changed_ = true;
-    log_entries_[name] = {source, [get_fn](mc_rtc::MessagePackBuilder & builder) mutable {
-                            mc_rtc::log::LogWriter<base_t>::write(get_fn(), builder);
-                          }};
+    auto log_type = log::callback_is_serializable<CallbackT>::log_type;
+    log_events_.push_back(KeyAddedEvent{log_type, name});
+    log_entries_.push_back({log_type, name, source, [get_fn](mc_rtc::MessagePackBuilder & builder) mutable {
+                              mc_rtc::log::LogWriter<base_t>::write(get_fn(), builder);
+                            }});
   }
 
   /** Add a log entry from a source and a compile-time pointer to member
@@ -160,15 +234,18 @@ public:
    *
    * \param source Source of the log entry
    *
+   * \param overwrite If true, overwrite the previous entry of the same name (if any), otherwise log and return
+   *
    */
   template<typename MemberPtrT,
            MemberPtrT member,
            typename SourceT,
            typename std::enable_if<mc_rtc::log::is_serializable_member<MemberPtrT>::value, int>::type = 0>
-  void addLogEntry(const std::string & name, const SourceT * source)
+  void addLogEntry(const std::string & name, const SourceT * source, bool overwrite = false)
   {
     using MemberT = decltype(source->*member);
-    addLogEntry(name, source, [source]() -> const MemberT & { return source->*member; });
+    addLogEntry(
+        name, source, [source]() -> const MemberT & { return source->*member; }, overwrite);
   }
 
   /** Add a log entry from a source and a compile-time pointer to method
@@ -183,15 +260,18 @@ public:
    *
    * \param source Source of the log entry
    *
+   * \param overwrite If true, overwrite the previous entry of the same name (if any), otherwise log and return
+   *
    */
   template<typename MethodPtrT,
            MethodPtrT method,
            typename SourceT,
            typename std::enable_if<mc_rtc::log::is_serializable_getter<MethodPtrT>::value, int>::type = 0>
-  void addLogEntry(const std::string & name, const SourceT * source)
+  void addLogEntry(const std::string & name, const SourceT * source, bool overwrite = false)
   {
     using MethodRetT = decltype((source->*method)());
-    addLogEntry(name, source, [source]() -> MethodRetT { return (source->*method)(); });
+    addLogEntry(
+        name, source, [source]() -> MethodRetT { return (source->*method)(); }, overwrite);
   }
 
   /** Add a log entry into the log with no source
@@ -206,11 +286,13 @@ public:
    *
    * \param get_fn A function that provides data that should be logged
    *
+   * \param overwrite If true, overwrite the previous entry of the same name (if any), otherwise log and return
+   *
    */
   template<typename T, typename std::enable_if<mc_rtc::log::callback_is_serializable<T>::value, int>::type = 0>
-  void addLogEntry(const std::string & name, T && get_fn)
+  void addLogEntry(const std::string & name, T && get_fn, bool overwrite = false)
   {
-    addLogEntry(name, static_cast<const void *>(nullptr), std::forward<T>(get_fn));
+    addLogEntry(name, static_cast<const void *>(nullptr), std::forward<T>(get_fn), overwrite);
   }
 
   /** Add multiple entries at once with the same entry
@@ -231,6 +313,12 @@ public:
     addLogEntry(name, source, get_fn);
     addLogEntries(source, std::forward<Args>(args)...);
   }
+
+  /** Add a GUI event to the log
+   *
+   * \param event Event being added to the log
+   */
+  inline void addGUIEvent(GUIEvent && event) { log_events_.push_back(std::move(event)); }
 
   /** Remove a log entry from the log
    *
@@ -263,15 +351,24 @@ public:
   void flush();
 
   /** Returns the number of entries currently in the log */
-  inline size_t size() const
-  {
-    return log_entries_.size();
-  }
+  inline size_t size() const { return log_entries_.size(); }
+
+  /** Remove all entries (except t) from the log
+   *
+   * \param record If true record the removal events in the log
+   *
+   * Note: if the \p record parameter is false and the log is written again it might be invalid
+   */
+  void clear(bool record = true);
 
 private:
   /** Hold information about a log entry stored in this instance */
   struct LogEntry
   {
+    /** Type of the entry */
+    log::LogType type;
+    /** Name of the entry */
+    std::string key;
     /** What is the data source (can be nullptr) */
     const void * source;
     /** Callback to log data */
@@ -279,10 +376,14 @@ private:
   };
   /** Store implementation detail related to the logging policy */
   std::shared_ptr<LoggerImpl> impl_ = nullptr;
-  /** Set to true when log entries are added or removed */
-  bool log_entries_changed_ = false;
+  /** Meta data for this instance */
+  Meta meta_;
+  /** Events that happened since the last time we wrote to the log */
+  std::vector<LogEvent> log_events_;
   /** Contains all the log entries */
-  std::unordered_map<std::string, LogEntry> log_entries_;
+  std::vector<LogEntry> log_entries_;
+
+  std::vector<LogEntry>::iterator find_entry(const std::string & name);
 
   /** Terminal condition for addLogEntries */
   template<typename SourceT>
@@ -293,16 +394,14 @@ private:
 
 /** Helper to log members or methods with "this" source to the logger variable */
 #define MC_RTC_LOG_HELPER(NAME, MEMBER)                                       \
-  do                                                                          \
-  {                                                                           \
+  do {                                                                        \
     using ThisT = typename std::remove_pointer<decltype(this)>::type;         \
     logger.addLogEntry<decltype(&ThisT::MEMBER), &ThisT::MEMBER>(NAME, this); \
   } while(0)
 
 /** Helper to log ambiguous getter methods */
 #define MC_RTC_LOG_GETTER(NAME, METHOD)                                          \
-  do                                                                             \
-  {                                                                              \
+  do {                                                                           \
     using MethodRetT = decltype(this->METHOD());                                 \
     logger.addLogEntry(NAME, this, [this]() -> MethodRetT { return METHOD(); }); \
   } while(0)

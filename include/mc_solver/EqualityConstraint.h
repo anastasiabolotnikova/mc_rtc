@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL, BIT
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #pragma once
@@ -54,10 +54,7 @@ struct EqualityConstraint : public Constraint<tasks::qp::Equality, UpdateT>
   {
   }
 
-  const Eigen::MatrixXd & AEq() const override
-  {
-    return this->AFull_;
-  }
+  const Eigen::MatrixXd & AEq() const override { return this->AFull_; }
 
   std::string descEq(const std::vector<rbd::MultiBody> &, int i) override
   {

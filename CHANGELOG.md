@@ -2,6 +2,222 @@
 
 ## [Unreleased]
 
+## [2.7.0] - 2023-09-06
+
+### Added
+
+- [bindings] Add bindings for ControllerClient (#384)
+- [mc_rtc] Allow to override existing log entries (#383)
+- [mc_rtc] Allow "chunky" XY plot updates (#386)
+- [mc_solver] ConstraintSet now has an update mechanism (#381)
+- [Samples: CoM] Support the Pepper robot
+
+### Changes
+
+- [StabilizerTask] Improve force distribution and CoP horizon reference (#375)
+- [mc_rbdyn] Convex objects are now automatically updated (#385)
+- [mc_solver] Collision constraint automatically display distance arrows when the distance falls below the interaction distance (#381)
+
+### Fixes
+
+- [bindings] Fix build for Cython >= 3.0.0
+- [cmake] Fix issue with yaml-cpp >= 0.8.0
+- [mc_control] Fix logging of plugin performances (#383)
+- [mc_observers] KinematicInertial uses function from state-observation (#388)
+- [mc_rbdyn] Fix loading of devices with canonical robots (#379)
+- [mc_rbdyn] Fix compilation with geos >= 3.12.0
+- [Replay] Fix output replay on fixed-based robots
+- [Replay] Avoid precision issue when comparing controller timestep with replay timestep
+
+## [2.6.0] - 2023-06-13
+
+### General
+
+This release is the first to support ROS2. Packages are provided for the ROS2 iron distribution under Ubuntu Jammy.
+
+### Added
+
+- [mc_control] FSM's state output can be set from a PythonState
+- [mc_observer] Add general configuration files and robot-specific configuration files for observers (#373)
+- [mc_rtc] It is now possible to log arbitrary fixed size vectors (#369)
+- [mc_solver] Allow to select active joints in CoMIncPlaneConstr (#374)
+
+### Changes
+
+- The `mc_observers` physical library has been removed. The symbols are now part of the `mc_control` library. For backward compatibility purposes, the `mc_rtc::mc_observers` target is still available.
+
+### Fixes
+
+- Avoid a crash when switching between two Python states (#372)
+
+## [2.5.0] - 2023-05-22
+
+### Added
+
+- [mc_control] GenericGripper now computes alphaOut (#365)
+- [StabilizerTask] Add a new method for force distribution based on horizon reference (#359)
+- [mc_rtc_ticker] Add an option to continue after the replay
+- [utils/mc_log_ui] Show a warning before displaying many plots at once
+
+### Fixes
+
+- [doc] Fix schema resolution issue to display the documentation correctly
+- [mc_tasks/BSplineTrajectoryTask] Use frame instead of surface
+- [Replay] Fix issues with datastore replay
+- [Replay] Add a GUI to control the iterations outside of the ticker (#367)
+- [StabilizerTask] Put kappa in gamma computation, avoids issue far from the origin
+- [Ticker] Use outputRobots for the input
+- [Ticker] Correctly enfore with-inputs option
+- [Ticker] Do not run as fast as possible after a failure
+- [utils/mc_log_ui] Show correct order for numerical entries of size > 9
+- [utils/mc_log_ui] Show the grid when only right-side graphs are selected
+
+## [2.4.0] - 2023-04-17
+
+### Changes
+
+- The debug loader suffix now defaults to the empty string on non Windows platform, meaning debug components can be installed along a release install (#356)
+
+### Added
+
+- [cmake] Add the MC_RTC_LOADER_DEBUG_SUFFIX option, allow to override globally or locally the debug suffix (#356)
+- [cmake] Add the MC_RTC_HONOR_INSTALL_PREFIX option, allow to install components outside of mc_rtc install tree (#356)
+- [mc_control] Introduce a built-in ticker with replay capabilties (#357)
+- [mc_control] Allow to check that a collision is active
+- [mc_control] Add support for wildcard collision removals
+
+### Fixes
+
+- [GUI] When passing a source to GUI elements, pass the same source to all elements added in this call
+- [mc_control] Correctly remove collision monitor buttons
+- [mc_control] Log the output robot rather than the control robot for a clearer view on the output of mc_rtc
+- [mc_tvm] Uses the convex's parent rather than the convex's frame
+
+## [2.3.0] - 2023-03-07
+
+### Changes
+
+- [mc_control] `r1` and/or `r2` are now optional when specifying a contact via YAML, it is interpreted as `MainRobot` (#349)
+
+### Added
+
+- [mc_rtc] Add simple queries for Configuration (`isArray`, `isObject`, `isString`, `isNumeric`)
+- [mc_rtc] Introduce helpers for working with member variables in GUI (#299)
+- [mc_rtc] Introduce helpers to work with visual elements in GUI (#299)
+- [mc_rtc] Add support for `std::optional<T>` in Configuration (#349)
+
+### Fixes
+
+- [bindings] Unhandled Python exceptions thrown from Python controllers and states are now shown
+- [bindings] GUI Transform callbacks now receive a sva.PTransformd object instead of an empty list
+- [doc] Documentation fixes (#344/#354)
+- [mc_control] Fix lifetime bugs introduced by robot's specific configuration handling
+- [mc_control_client] Correctly detect strings in `Table` formatting
+- [mc_control_client] Improve handling of `Trajectory` messages
+- [mc_filter] Fix `LowPassFiniteDifferences` reset
+- [mc_rbdyn] Fix various issues with handling of collision transforms (#347)
+- [mc_solver] Handle continuous joints in TVM backend
+- [mc_solver] Fix joint velocity limits in TVM backend
+- [utils] Avoid apt upgrades
+
+## [2.2.0] - 2023-02-08
+
+### Added
+
+- [mc_control] Add support for robot's specific configuration automated loading (#327)
+- [mc_control] Add support for configuration overwrite (#339)
+
+### Changes
+
+- [mc_rtc] Change notification emergency level so they disappear automatically
+
+### Fixes
+
+- [bindings] Improve incremental builds (#340)
+- [mc_control] Fix potential segfault on exit due to libraries unloading
+- [mc_control] Expose constructors for backend specific controllers
+- [mc_solver] Fix inSolver logic for ConstraintSet
+
+## [2.1.0] - 2023-01-25
+
+### Added
+
+- [mc_tasks] Added an option to disable CoP constraints in the stabilizer (#335)
+- [mc_tasks] Added FirstOrderImpedanceTask (#332)
+
+### Fixes
+
+- [mc_control_client] Fix polyhedron handling (#336)
+- [utils] Fix usage of matplotlib in older versions
+
+## [2.0.1] - 2023-01-20
+
+### Changes
+
+- [mc_rtc] Update logging format for performance purposes (#330)
+- [utils] Updated style of generated controllers (#328)
+
+### Fixes
+
+- [debian] Correctly superseeds the libmc-rtc1 package
+- [mc_tasks] Initialize target wrench in ImpedanceGains
+
+## [2.0.0] - 2023-01-13
+
+### General
+
+The TVM backend is now available (#322). When this backend is used, one can access the extra functionalities provided by [TVM].
+
+mc_tvm is also introduced. This provides [TVM] robotic functions using mc_rtc components.
+
+`mc_control::TasksController` (resp. `mc_control::fsm::TasksController` for the FSM) and `mc_control::TVMController` (resp. `mc_control::fsm::TVMController`) are available to use a specific backend and make their extra functionalities readily available.
+
+### Added
+
+- [mc_rtc] Added mc_rtc::log::notify which sends a desktop notification (#311)
+- [mc_log_ui] Add plot of RPY angles time derivative (#317)
+- [mc_tasks] Add a DCM bias accessor to the stabilizer (#310)
+- [mc_tasks] Make foot force difference control 3D in the stabilizer (#310)
+- [mc_tasks] Add PostureTask::jointWeights (#316)
+
+### Changes
+
+- [mc_control] FSM executor cannot be moved or copied to prevent misuse (#324)
+- [mc_control] Default constraints use an `std::unique_ptr` wrapper to prevent misuse (#313)
+
+### Fixes
+
+- [mc_log_ui] Fix 3D plots for recent matplotlib (#323)
+- [mc_log_ui] Fix saving of user plots for XY and 3D plots
+
+## [1.14.2] - 2022-12-06
+
+### Fixes
+
+- Ensure the context backend is always set in the controller run/reset function
+- Safeguards against inclusion of different backend's constraints
+
+## [1.14.1] - 2022-12-01
+
+### Fixes
+
+- [HalfSitController] Do not reset the self collision constraint pointer to zero
+
+## [1.14.0] - 2022-11-29
+
+### Changes
+
+- [mc_control] Introduced output robots that allow to decouple the control model from the output model (#303)
+- [mc_rbdyn] Sensors' data is now shared among all instances of a "same" robot (i.e. control/real/output/outputReal) (#303)
+- [mc_rbdyn] Sensors' data can no longer be set through the `Robot` interface (#303)
+- [mc_solver] QPSolver is now an abstract class, many implementation details of tasks/constraints are now hidden (#254)
+
+### Fixes
+
+- [GUI] Live plots now contain all data regardless of the GUI timestep (#300)
+- [mc_tasks] Make the DCM estimator compatible with external wrenches in the stabilizer (#301)
+- [mc_observers] Fix kinematic inertial IMU pose (#306)
+
 ## [1.13.0] - 2022-10-16
 
 ### Changes
@@ -525,7 +741,19 @@ mc_rtc website and tutorials are now available in [Japanese](https://jrl-umi3218
 
 Initial release
 
-[Unreleased]: https://github.com/jrl-umi3218/mc_rtc/compare/v1.13.0...HEAD
+[Unreleased]: https://github.com/jrl-umi3218/mc_rtc/compare/v2.7.0...HEAD
+[2.7.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.7.0
+[2.6.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.6.0
+[2.5.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.5.0
+[2.4.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.4.0
+[2.3.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.3.0
+[2.2.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.2.0
+[2.1.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.1.0
+[2.0.1]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.0.1
+[2.0.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.0.0
+[1.14.2]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.14.2
+[1.14.1]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.14.1
+[1.14.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.14.0
 [1.13.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.13.0
 [1.12.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.12.0
 [1.11.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.11.0
@@ -547,3 +775,4 @@ Initial release
 [1.0.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v1.0.0
 
 [stabilizer documentation]: https://jrl-umi3218.github.io/mc_rtc/tutorials/recipes/lipm-stabilizer.html
+[TVM]: https://github.com/jrl-umi3218/tvm

@@ -12,6 +12,7 @@
 #include <mc_solver/CoMIncPlaneConstr.h>
 
 #include <mc_tasks/CoMTask.h>
+#include <mc_tasks/OrientationTask.h>
 
 #include <mc_rtc/logging.h>
 
@@ -66,7 +67,7 @@ static std::vector<std::vector<Eigen::Vector3d>> makeCubePolygon(const Eigen::Ve
 struct MC_CONTROL_DLLAPI TestCoMInBoxController : public MCController
 {
 public:
-  TestCoMInBoxController(mc_rbdyn::RobotModulePtr rm, double dt) : MCController(rm, dt)
+  TestCoMInBoxController(mc_rbdyn::RobotModulePtr rm, double dt, Backend backend) : MCController(rm, dt, backend)
   {
     // Check that the default constructor loads the robot + ground environment
     BOOST_CHECK_EQUAL(robots().size(), 2);
@@ -74,17 +75,23 @@ public:
     BOOST_CHECK_EQUAL(robot().name(), "jvrc1");
     solver().addConstraintSet(contactConstraint);
     solver().addConstraintSet(dynamicsConstraint);
-    postureTask->stiffness(1);
-    postureTask->weight(1);
     solver().addTask(postureTask.get());
     addContact({"jvrc1", "ground", "LeftFoot", "AllGround"});
     addContact({"jvrc1", "ground", "RightFoot", "AllGround"});
     /* Create and add the CoM task with the default stiffness/weight */
     comTask = std::make_shared<mc_tasks::CoMTask>(robots(), 0);
-    comTask->stiffness(50);
     solver().addTask(comTask);
+    comTask->stiffness(100.0);
+    comTask->weight(1e5);
+    /** Add an orientation task to keep the chest straight */
+    auto chestTask = std::make_shared<mc_tasks::OrientationTask>(robot().frame("WAIST_R_S"));
+    // solver().addTask(chestTask);
     /** Create the constraint */
     comConstraint = std::make_shared<mc_solver::CoMIncPlaneConstr>(robots(), 0, solver().dt());
+    comConstraint->setInactiveJoints({"NECK_Y", "NECK_R", "NECK_P"});
+    //  comConstraint->setActiveJoints({"Root", "R_HIP_P", "R_HIP_R", "R_HIP_Y", "R_KNEE", "R_ANKLE_R", "R_ANKLE_P",
+    //                                  "L_HIP_P", "L_HIP_R", "L_HIP_Y", "L_KNEE", "L_ANKLE_R", "L_ANKLE_P", "WAIST_Y",
+    //                                  "WAIST_P", "WAIST_R"});
     solver().addConstraintSet(*comConstraint);
 
     mc_rtc::log::success("Created TestCoMInBoxController");
@@ -92,27 +99,23 @@ public:
 
   bool run() override
   {
-    bool ret = MCController::run();
-    BOOST_REQUIRE(ret);
+    if(!MCController::run()) { return false; }
     nrIter++;
-    if(nrIter > 500 && !expanded)
+    if(nrIter > 10 && !expanded)
     {
-      updateConstraint(0.0001);
-      if(size > 0.16)
-      {
-        expanded = true;
-      }
+      updateConstraint(0.00005);
+      if(size > 0.16) { expanded = true; }
     }
     else if(expanded && !shrinked)
     {
-      updateConstraint(-0.0001);
+      updateConstraint(-0.00005);
       if(size < 0.02)
       {
         shrinked = true;
         mc_rtc::log::success("Finished at iter: {}", nrIter);
       }
     }
-    return ret;
+    return true;
   }
 
   void reset(const ControllerResetData & reset_data) override
@@ -126,10 +129,10 @@ public:
     comConstraint->setPlanes(solver(), makeCube(origin, size));
     /* Draw the box */
     poly = makeCubePolygon(robot().com(), size);
-    gui()->addElement(
-        {"Constraints", "CoMBox"},
-        mc_rtc::gui::Polygon("polygon", mc_rtc::gui::Color::Red,
-                             [this]() -> const std::vector<std::vector<Eigen::Vector3d>> & { return poly; }));
+    gui()->addElement({"Constraints", "CoMBox"},
+                      mc_rtc::gui::Polygon("polygon", mc_rtc::gui::Color::Red,
+                                           [this]() -> const std::vector<std::vector<Eigen::Vector3d>> &
+                                           { return poly; }));
   }
 
   void updateConstraint(double spd)
@@ -138,10 +141,7 @@ public:
     auto planes = makeCube(origin, size);
     std::vector<Eigen::Vector3d> speeds(planes.size());
     std::vector<Eigen::Vector3d> normalDots(planes.size(), Eigen::Vector3d::Zero());
-    for(size_t i = 0; i < planes.size(); ++i)
-    {
-      speeds[i] = -planes[i].normal * spd;
-    }
+    for(size_t i = 0; i < planes.size(); ++i) { speeds[i] = -planes[i].normal * spd; }
     poly = makeCubePolygon(origin, size);
     comConstraint->setPlanes(solver(), planes, speeds, normalDots);
   }
@@ -159,4 +159,9 @@ private:
 
 } // namespace mc_control
 
-SIMPLE_CONTROLLER_CONSTRUCTOR("TestCoMInBoxController", mc_control::TestCoMInBoxController)
+using Controller = mc_control::TestCoMInBoxController;
+using Backend = mc_control::MCController::Backend;
+MULTI_CONTROLLERS_CONSTRUCTOR("TestCoMInBoxController",
+                              Controller(rm, dt, Backend::Tasks),
+                              "TestCoMInBoxController_TVM",
+                              Controller(rm, dt, Backend::TVM))

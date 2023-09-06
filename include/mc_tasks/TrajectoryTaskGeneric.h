@@ -1,29 +1,32 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #pragma once
 
-#include <mc_rbdyn/Robots.h>
-#include <mc_rtc/logging.h>
-#include <mc_solver/QPSolver.h>
 #include <mc_tasks/MetaTask.h>
-#include <mc_tasks/api.h>
+
+#include <mc_tasks/TVMTrajectoryTaskGeneric.h>
+
+#include <mc_rbdyn/Robots.h>
+
+#include <mc_rtc/logging.h>
+#include <mc_rtc/void_ptr.h>
 
 #include <Tasks/QPTasks.h>
 
 namespace mc_tasks
 {
 
-/*! \brief Generic wrapper for a tasks::qp::TrajectoryTask
+/*! \brief Generic wrapper for a trajectory dynamic over an error function
  *
  * This task is meant to be derived to build actual tasks
  *
  */
-template<typename T>
-struct TrajectoryTaskGeneric : public MetaTask
+struct MC_TASKS_DLLAPI TrajectoryTaskGeneric : public MetaTask
 {
-  using TrajectoryBase = TrajectoryTaskGeneric<T>;
+  /** For backward compatibility */
+  using TrajectoryBase = TrajectoryTaskGeneric;
 
   /*! \brief Constructor (auto damping)
    *
@@ -59,7 +62,7 @@ struct TrajectoryTaskGeneric : public MetaTask
    */
   TrajectoryTaskGeneric(const mc_rbdyn::RobotFrame & frame, double stiffness, double weight);
 
-  virtual ~TrajectoryTaskGeneric();
+  virtual ~TrajectoryTaskGeneric() = default;
 
   /*! \brief Reset task target velocity and acceleration to zero
    *
@@ -248,15 +251,46 @@ struct TrajectoryTaskGeneric : public MetaTask
 
   const Eigen::VectorXd & normalAcc() const;
 
-  const Eigen::MatrixXd & jac() const;
-
   void load(mc_solver::QPSolver & solver, const mc_rtc::Configuration & config) override;
 
 protected:
   /*! This function should be called to finalize the task creation, it will
    * create the actual tasks objects */
-  template<typename... Args>
-  void finalize(Args &&... args);
+  /** This function must be called by the derived class to finalize the creation of the task
+   *
+   * \tparam ErrorT Actual type of \ref errorT
+   *
+   * \param args Arguments passed to the constructor of \ref errorT
+   */
+  template<Backend backend, typename ErrorT, typename... Args>
+  inline void finalize(Args &&... args)
+  {
+    assert(backend == backend_);
+    errorT = mc_rtc::make_void_ptr<ErrorT>(std::forward<Args>(args)...);
+    if constexpr(backend == Backend::Tasks)
+    {
+      trajectoryT_ = mc_rtc::make_void_ptr<tasks::qp::TrajectoryTask>(
+          robots.mbs(), rIndex, static_cast<ErrorT *>(errorT.get()), stiffness_(0), damping_(0), weight_);
+      auto & trajectory = *static_cast<tasks::qp::TrajectoryTask *>(trajectoryT_.get());
+      stiffness_ = trajectory.stiffness();
+      damping_ = trajectory.damping();
+      if(refVel_.size() != trajectory.refVel().size()) { refVel_ = trajectory.refVel(); }
+      if(refAccel_.size() != trajectory.refAccel().size()) { refAccel_ = trajectory.refAccel(); }
+    }
+    else if constexpr(backend == Backend::TVM)
+    {
+      auto error = static_cast<ErrorT *>(errorT.get());
+      trajectoryT_ = mc_rtc::make_void_ptr<details::TVMTrajectoryTaskGenericPtr>(
+          std::make_shared<details::TVMTrajectoryTaskGeneric>());
+      static_cast<details::TVMTrajectoryTaskGenericPtr *>(trajectoryT_.get())->get()->init<ErrorT>(error);
+      int size = error->size();
+      stiffness_ = Eigen::VectorXd::Constant(size, 1, stiffness_(0));
+      damping_ = Eigen::VectorXd::Constant(size, 1, damping_(0));
+      if constexpr(details::has_refVel_v<ErrorT>) { refVel_ = error->refVel(); }
+      if constexpr(details::has_refAccel_v<ErrorT>) { refAccel_ = error->refAccel(); }
+    }
+    else { mc_rtc::log::error_and_throw("[{} task] Not implemented for backend: {}", backend_); }
+  }
 
   void addToGUI(mc_rtc::gui::StateBuilder &) override;
 
@@ -266,23 +300,40 @@ protected:
       double dt,
       const mc_rtc::Configuration & config) const override;
 
-protected:
   const mc_rbdyn::Robots & robots;
   unsigned int rIndex;
-  std::shared_ptr<T> errorT = nullptr;
+  /** Pointer to the error function
+   *
+   * The actual type depends on the implementation
+   */
+  mc_rtc::void_ptr errorT{nullptr, nullptr};
   Eigen::VectorXd refVel_;
   Eigen::VectorXd refAccel_;
   bool inSolver_ = false;
-  std::shared_ptr<tasks::qp::TrajectoryTask> trajectoryT_ = nullptr;
+  /** Pointer to the trajectory dynamic
+   *
+   * In Tasks backend:
+   * - tasks::qp::TrajectoryTask
+   *
+   * In TVM backend:
+   * - details::TVMTrajectoryTaskGeneric
+   */
+  mc_rtc::void_ptr trajectoryT_{nullptr, nullptr};
 
-protected:
   void addToSolver(mc_solver::QPSolver & solver) override;
 
-private:
   Eigen::VectorXd stiffness_;
   Eigen::VectorXd damping_;
   double weight_;
-  std::shared_ptr<tasks::qp::JointsSelector> selectorT_ = nullptr;
+  /** Pointer to a dynamic wrapper that select specific joints
+   *
+   * In Tasks backend:
+   * - tasks::qp::JointSelector
+   *
+   * In TVM backend:
+   * mc_tvm::JointsSelectorFunction
+   */
+  mc_rtc::void_ptr selectorT_{nullptr, nullptr};
 
   void removeFromSolver(mc_solver::QPSolver & solver) override;
 
@@ -290,5 +341,3 @@ private:
 };
 
 } // namespace mc_tasks
-
-#include <mc_tasks/TrajectoryTaskGeneric.hpp>

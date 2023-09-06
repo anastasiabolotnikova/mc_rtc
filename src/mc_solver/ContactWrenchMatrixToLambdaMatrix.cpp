@@ -1,9 +1,12 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL, BIT
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
-#include <mc_rtc/logging.h>
 #include <mc_solver/utils/ContactWrenchMatrixToLambdaMatrix.h>
+
+#include <mc_solver/TasksQPSolver.h>
+
+#include <mc_rtc/logging.h>
 
 #if not EIGEN_VERSION_AT_LEAST(3, 2, 90)
 namespace Eigen
@@ -18,9 +21,14 @@ namespace mc_solver
 namespace utils
 {
 
-ContactWrenchMatrixToLambdaMatrix::ContactWrenchMatrixToLambdaMatrix(const mc_solver::QPSolver & solver,
+ContactWrenchMatrixToLambdaMatrix::ContactWrenchMatrixToLambdaMatrix(const mc_solver::QPSolver & solver_,
                                                                      const tasks::qp::ContactId & id)
 {
+  if(solver_.backend() != QPSolver::Backend::Tasks)
+  {
+    mc_rtc::log::error_and_throw("[ContactWrenchMatrixToLambdaMatrix] Only supports Tasks backend");
+  }
+  const auto & solver = tasks_solver(solver_);
   auto qp_c = solver.contactById(id);
   if(qp_c.first == -1)
   {
@@ -46,10 +54,7 @@ ContactWrenchMatrixToLambdaMatrix::ContactWrenchMatrixToLambdaMatrix(const mc_so
     sva::PTransformd X_cf_pi = X_b_pi * contact.X_b1_cf.inv();
     X_cf_pi_T.block(0, 0, 3, 3) = sva::vector3ToCrossMatrix(X_cf_pi.translation()) * X_cf_pi.rotation().transpose();
     X_cf_pi_T.block(3, 0, 3, 3) = X_cf_pi.rotation().transpose();
-    for(size_t j = 0; j < cones[i].generators.size(); ++j)
-    {
-      Gi.col(static_cast<int>(j)) = cones[i].generators[j];
-    }
+    for(size_t j = 0; j < cones[i].generators.size(); ++j) { Gi.col(static_cast<int>(j)) = cones[i].generators[j]; }
     transform_.block(0, col, 6, static_cast<int>(cones[i].generators.size())) =
         X_cf_pi_T * Gi.block(0, 0, 3, static_cast<int>(cones[i].generators.size()));
     col += static_cast<int>(cones[i].generators.size());

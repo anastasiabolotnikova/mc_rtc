@@ -10,10 +10,7 @@
 
 #include <mc_rbdyn/Robot.h>
 
-namespace mc_rtc
-{
-
-namespace gui
+namespace mc_rtc::gui
 {
 
 namespace details
@@ -37,10 +34,7 @@ struct RobotImpl : public Element
     static_assert(CheckReturnType<GetT, mc_rbdyn::Robot>::value, "Robot element must return an mc_rbdyn::Robot");
   }
 
-  static constexpr size_t write_size()
-  {
-    return Element::write_size() + 3;
-  }
+  static constexpr size_t write_size() { return Element::write_size() + 3; }
 
   void write(mc_rtc::MessagePackBuilder & builder)
   {
@@ -59,11 +53,9 @@ private:
 
 /** Helper function to create a RobotImpl */
 template<typename GetT>
-details::RobotImpl<GetT> Robot(const std::string & name, GetT get_fn)
+auto Robot(const std::string & name, GetT get_fn)
 {
-  return details::RobotImpl<GetT>(name, get_fn);
+  return details::RobotImpl(name, get_fn);
 }
 
-} // namespace gui
-
-} // namespace mc_rtc
+} // namespace mc_rtc::gui

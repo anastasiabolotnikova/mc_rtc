@@ -1,15 +1,17 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #pragma once
 
+#include <mc_tasks/api.h>
+
 #include <mc_rtc/Configuration.h>
 #include <mc_rtc/gui/StateBuilder.h>
 #include <mc_rtc/log/Logger.h>
+
 #include <mc_solver/QPSolver.h>
 #include <mc_solver/api.h>
-#include <mc_tasks/api.h>
 
 #include <cmath>
 
@@ -18,10 +20,16 @@ namespace mc_control
 struct CompletionCriteria;
 }
 
-namespace mc_tasks
+namespace mc_solver
 {
 
-MC_SOLVER_DLLAPI double extraStiffness(double error, double extraStiffness);
+struct TasksQPSolver;
+struct TVMQPSolver;
+
+} // namespace mc_solver
+
+namespace mc_tasks
+{
 
 /*! \brief Represents a generic task
  *
@@ -31,16 +39,20 @@ MC_SOLVER_DLLAPI double extraStiffness(double error, double extraStiffness);
 struct MC_SOLVER_DLLAPI MetaTask
 {
   friend struct mc_solver::QPSolver;
+  friend struct mc_solver::TasksQPSolver;
+  friend struct mc_solver::TVMQPSolver;
   friend struct mc_control::CompletionCriteria;
 
+  /** Shortcut for implementation */
+  using Backend = mc_solver::QPSolver::Backend;
+
 public:
+  inline MetaTask() : backend_(mc_solver::QPSolver::context_backend()) {}
+
   virtual ~MetaTask();
 
   /** Get the type of the task */
-  const std::string & type() const
-  {
-    return type_;
-  }
+  const std::string & type() const { return type_; }
 
   /** Set a name for the task
    *
@@ -49,16 +61,10 @@ public:
    * The name should be set before being added to the solver.
    *
    */
-  virtual inline void name(const std::string & name)
-  {
-    name_ = name;
-  }
+  virtual inline void name(const std::string & name) { name_ = name; }
 
   /** Get the name of the task */
-  inline const std::string & name() const
-  {
-    return name_;
-  }
+  inline const std::string & name() const { return name_; }
 
   /*! \brief Reset the task */
   virtual void reset() = 0;
@@ -140,22 +146,15 @@ public:
   virtual void load(mc_solver::QPSolver & solver, const mc_rtc::Configuration & config);
 
   /*! \brief Get the number of iterations since the task was added to the solver */
-  inline size_t iterInSolver() const noexcept
-  {
-    return iterInSolver_;
-  }
+  inline size_t iterInSolver() const noexcept { return iterInSolver_; }
 
   /*! \brief Set the number of iterations since the task was added to the solver to zero */
-  inline void resetIterInSolver() noexcept
-  {
-    iterInSolver_ = 0;
-  }
+  inline void resetIterInSolver() noexcept { iterInSolver_ = 0; }
 
   /*! \brief Increment the number of iterations since the task was added to the solver */
-  inline void incrementIterInSolver() noexcept
-  {
-    iterInSolver_++;
-  }
+  inline void incrementIterInSolver() noexcept { iterInSolver_++; }
+
+  inline Backend backend() const noexcept { return backend_; }
 
 protected:
   /*! \brief Add the task to a solver
@@ -167,10 +166,7 @@ protected:
 
   /*! Helper function when using another MetaTask inside a MetaTask as adding
    * the task through the solver interface has important side-effects */
-  static inline void addToSolver(MetaTask & t, mc_solver::QPSolver & solver)
-  {
-    t.addToSolver(solver);
-  }
+  static inline void addToSolver(MetaTask & t, mc_solver::QPSolver & solver) { t.addToSolver(solver); }
 
   /*! \brief Remove the task from a solver
    *
@@ -181,10 +177,7 @@ protected:
 
   /*! Helper function when using another MetaTask inside a MetaTask as removing
    * the task through the solver interface has important side-effects */
-  static inline void removeFromSolver(MetaTask & t, mc_solver::QPSolver & solver)
-  {
-    t.removeFromSolver(solver);
-  }
+  static inline void removeFromSolver(MetaTask & t, mc_solver::QPSolver & solver) { t.removeFromSolver(solver); }
 
   /*! \brief Update the task
    *
@@ -196,10 +189,7 @@ protected:
   virtual void update(mc_solver::QPSolver & solver) = 0;
 
   /*! Helper function when using another MetaTask inside a MetaTask */
-  static inline void update(MetaTask & t, mc_solver::QPSolver & solver)
-  {
-    t.update(solver);
-  }
+  static inline void update(MetaTask & t, mc_solver::QPSolver & solver) { t.update(solver); }
 
   /** Add entries to the logger
    *
@@ -212,10 +202,7 @@ protected:
 
   /*! Helper function to add a task to the logger when using another MetaTask
    * inside a MetaTask */
-  static inline void addToLogger(MetaTask & t, mc_rtc::Logger & logger)
-  {
-    t.addToLogger(logger);
-  }
+  static inline void addToLogger(MetaTask & t, mc_rtc::Logger & logger) { t.addToLogger(logger); }
 
   /** Remove entries from the logger
    *
@@ -228,10 +215,7 @@ protected:
 
   /*! Helper function to remove a task from the logger when using another MetaTask
    * inside a MetaTask */
-  static inline void removeFromLogger(MetaTask & t, mc_rtc::Logger & logger)
-  {
-    t.removeFromLogger(logger);
-  }
+  static inline void removeFromLogger(MetaTask & t, mc_rtc::Logger & logger) { t.removeFromLogger(logger); }
 
   /** Add elements to the GUI through the helper
    *
@@ -245,10 +229,7 @@ protected:
 
   /*! Helper function to add a task to the gui when using another MetaTask
    * inside a MetaTask */
-  static inline void addToGUI(MetaTask & t, mc_rtc::gui::StateBuilder & gui)
-  {
-    t.addToGUI(gui);
-  }
+  static inline void addToGUI(MetaTask & t, mc_rtc::gui::StateBuilder & gui) { t.addToGUI(gui); }
 
   /** Remove elements from the GUI through the helper
    *
@@ -261,10 +242,7 @@ protected:
 
   /*! Helper function to remove a task from the gui when using another MetaTask
    * inside a MetaTask */
-  static inline void removeFromGUI(MetaTask & t, mc_rtc::gui::StateBuilder & gui)
-  {
-    t.removeFromGUI(gui);
-  }
+  static inline void removeFromGUI(MetaTask & t, mc_rtc::gui::StateBuilder & gui) { t.removeFromGUI(gui); }
 
   inline static void ensureHasJoints(const mc_rbdyn::Robot & robot,
                                      const std::vector<std::string> & joints,
@@ -300,6 +278,9 @@ protected:
   virtual std::function<bool(const mc_tasks::MetaTask & task, std::string &)> buildCompletionCriteria(
       double dt,
       const mc_rtc::Configuration & config) const;
+
+  /** QPSolver backend at creation time */
+  Backend backend_;
 
   std::string type_;
   std::string name_;

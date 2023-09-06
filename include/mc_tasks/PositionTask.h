@@ -1,20 +1,18 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #pragma once
 
 #include <mc_tasks/TrajectoryTaskGeneric.h>
 
+#include <mc_tvm/PositionFunction.h>
+
 namespace mc_tasks
 {
 
-/*! \brief Control the position of a frame
-
- * This task is thin wrapper around the appropriate tasks in Tasks.
- *
- */
-struct MC_TASKS_DLLAPI PositionTask : public TrajectoryTaskGeneric<tasks::qp::PositionTask>
+/*! \brief Control the position of a frame */
+struct MC_TASKS_DLLAPI PositionTask : public TrajectoryTaskGeneric
 {
 public:
   friend struct EndEffectorTask;
@@ -59,7 +57,15 @@ public:
   /*! \brief Get the position target */
   inline const Eigen::Vector3d & position() const noexcept
   {
-    return errorT->position();
+    switch(backend_)
+    {
+      case Backend::Tasks:
+        return static_cast<tasks::qp::PositionTask *>(errorT.get())->position();
+      case Backend::TVM:
+        return static_cast<mc_tvm::PositionFunction *>(errorT.get())->position();
+      default:
+        mc_rtc::log::error_and_throw("Not implemented");
+    }
   }
 
   /*! \brief Set the position target
@@ -69,14 +75,35 @@ public:
    */
   inline void position(const Eigen::Vector3d & pos) noexcept
   {
-    errorT->position(pos);
+    switch(backend_)
+    {
+      case Backend::Tasks:
+        static_cast<tasks::qp::PositionTask *>(errorT.get())->position(pos);
+        break;
+      case Backend::TVM:
+        static_cast<mc_tvm::PositionFunction *>(errorT.get())->position(pos);
+        break;
+      default:
+        mc_rtc::log::error_and_throw("Not implemented");
+    }
   }
 
   /*! \brief Get the body point being controlled
    */
   inline const Eigen::Vector3d & bodyPoint() const noexcept
   {
-    return errorT->bodyPoint();
+    switch(backend_)
+    {
+      case Backend::Tasks:
+        return static_cast<tasks::qp::PositionTask *>(errorT.get())->bodyPoint();
+      case Backend::TVM:
+      {
+        static Eigen::Vector3d res = Eigen::Vector3d::Zero();
+        return res;
+      }
+      default:
+        mc_rtc::log::error_and_throw("Not implemented");
+    }
   }
 
   void addToGUI(mc_rtc::gui::StateBuilder & gui) override;

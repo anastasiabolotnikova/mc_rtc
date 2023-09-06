@@ -42,6 +42,30 @@ MCGlobalController::MCGlobalController(const std::string & conf, std::shared_ptr
 MCGlobalController::MCGlobalController(const GlobalConfiguration & conf)
 : config(conf), current_ctrl(""), next_ctrl(""), controller_(nullptr), next_controller_(nullptr)
 {
+  // Display configuration information
+  if(conf.enable_gui_server)
+  {
+    mc_rtc::log::info("GUI server enabled");
+    mc_rtc::log::info("Will serve data on:");
+    for(const auto & pub_uri : conf.gui_server_pub_uris) { mc_rtc::log::info("- {}", pub_uri); }
+    mc_rtc::log::info("Will handle requests on:");
+    for(const auto & rep_uri : conf.gui_server_rep_uris) { mc_rtc::log::info("- {}", rep_uri); }
+  }
+  else { mc_rtc::log::info("GUI server disabled"); }
+  {
+    std::string plugin_str;
+    for(const auto & p : conf.global_plugins)
+    {
+      if(plugin_str.size()) { plugin_str += ", "; }
+      plugin_str += p;
+      if(std::find(conf.global_plugins_autoload.begin(), conf.global_plugins_autoload.end(), p)
+         != conf.global_plugins_autoload.end())
+      {
+        plugin_str += " (autoload)";
+      }
+    }
+    mc_rtc::log::info("Enabled plugins: {}", plugin_str);
+  }
   // Loading plugins
   config.load_plugin_configs();
   try
@@ -56,10 +80,7 @@ MCGlobalController::MCGlobalController(const GlobalConfiguration & conf)
 #ifdef MC_RTC_BUILD_STATIC
   GlobalPluginLoader::loader().set_verbosity(config.verbose_loader);
 #endif
-  for(const auto & plugin : config.global_plugins)
-  {
-    loadPlugin(plugin, "global configuration");
-  }
+  for(const auto & plugin : config.global_plugins) { loadPlugin(plugin, "global configuration"); }
 
   // Loading controller modules
   config.load_controllers_configs();
@@ -116,9 +137,11 @@ MCGlobalController::MCGlobalController(const GlobalConfiguration & conf)
 
 MCGlobalController::~MCGlobalController()
 {
-  // We clear all datastore before (potentially) unloading any libraries
+  // We clear all datastore and gui before (potentially) unloading any libraries
   for(auto & ctl : controllers)
   {
+    ctl.second->logger().clear(false);
+    ctl.second->gui()->reset();
     ctl.second->datastore().clear();
   }
 }
@@ -131,10 +154,7 @@ std::shared_ptr<mc_rbdyn::RobotModule> MCGlobalController::get_robot_module()
 std::vector<std::string> MCGlobalController::enabled_controllers() const
 {
   std::vector<std::string> ret;
-  for(const auto & c : controllers)
-  {
-    ret.push_back(c.first);
-  }
+  for(const auto & c : controllers) { ret.push_back(c.first); }
   return ret;
 }
 
@@ -166,14 +186,11 @@ void MCGlobalController::init(const std::vector<double> & initq, const std::arra
 
 void MCGlobalController::init(const std::vector<double> & initq, const sva::PTransformd & initAttitude)
 {
-  initEncoders(robot(), initq);
-  robot().posW(initAttitude);
-  for(auto & robot : robots())
+  initEncoders(controller().robot(), initq);
+  controller().robot().posW(initAttitude);
+  for(auto & robot : controller().robots())
   {
-    if(robot.robotIndex() == robots().robotIndex())
-    {
-      continue;
-    }
+    if(robot.robotIndex() == controller().robots().robotIndex()) { continue; }
     initEncoders(robot);
   }
   this->initController();
@@ -181,32 +198,31 @@ void MCGlobalController::init(const std::vector<double> & initq, const sva::PTra
 
 void MCGlobalController::init(const std::vector<double> & initq)
 {
-  initEncoders(robot(), initq);
+  initEncoders(controller().robot(), initq);
 
-  auto & q = robot().mbc().q;
+  auto & q = controller().robot().mbc().q;
   if(!controller_->config().has("init_pos")
-     && !(controller_->config().has(robot().name()) && controller_->config()(robot().name()).has("init_pos")))
+     && !(controller_->config().has(controller().robot().name())
+          && controller_->config()(controller().robot().name()).has("init_pos")))
   {
     // Configure initial attitude (requires FK to be computed)
     if(config.init_attitude_from_sensor)
     {
-      auto initAttitude = [this](const mc_rbdyn::BodySensor & sensor) {
+      auto initAttitude = [this](const mc_rbdyn::BodySensor & sensor)
+      {
         mc_rtc::log::info("Initializing attitude from body sensor: {}", sensor.name());
         // Update free flyer from body sensor takin into account the kinematics
         // between sensor and body
-        const auto & fb = robot().mb().body(0).name();
+        const auto & fb = controller().robot().mb().body(0).name();
         sva::PTransformd X_0_s(sensor.orientation(), sensor.position());
         const auto X_s_b = sensor.X_b_s().inv();
-        sva::PTransformd X_b_fb = robot().X_b1_b2(sensor.parentBody(), fb);
+        sva::PTransformd X_b_fb = controller().robot().X_b1_b2(sensor.parentBody(), fb);
         sva::PTransformd X_s_fb = X_b_fb * X_s_b;
         auto initPos = X_s_fb * X_0_s;
-        robot().posW(initPos);
-        realRobot().posW(initPos);
+        controller().robot().posW(initPos);
+        controller().realRobot().posW(initPos);
       };
-      if(config.init_attitude_sensor.empty())
-      {
-        initAttitude(controller_->robot().bodySensor());
-      }
+      if(config.init_attitude_sensor.empty()) { initAttitude(controller_->robot().bodySensor()); }
       else
       {
         if(controller_->robot().hasBodySensor(config.init_attitude_sensor))
@@ -224,21 +240,18 @@ void MCGlobalController::init(const std::vector<double> & initq)
     else
     {
       mc_rtc::log::info("Initializing attitude from robot module: q=[{}]",
-                        mc_rtc::io::to_string(robot().module().default_attitude(), ", ", 3));
+                        mc_rtc::io::to_string(controller().robot().module().default_attitude(), ", ", 3));
       if(q[0].size() == 7)
       {
-        const auto & initAttitude = robot().module().default_attitude();
+        const auto & initAttitude = controller().robot().module().default_attitude();
         q[0] = {std::begin(initAttitude), std::end(initAttitude)};
-        robot().forwardKinematics();
+        controller().robot().forwardKinematics();
       }
     }
   }
-  for(auto & robot : robots())
+  for(auto & robot : controller().robots())
   {
-    if(robot.robotIndex() == robots().robotIndex())
-    {
-      continue;
-    }
+    if(robot.robotIndex() == controller().robots().robotIndex()) { continue; }
     initEncoders(robot);
   }
   this->initController();
@@ -254,22 +267,13 @@ void MCGlobalController::init(const std::map<std::string, std::vector<double>> &
                               const std::map<std::string, sva::PTransformd> & initAttitudes,
                               bool reset)
 {
-  for(auto & robot : robots())
+  for(auto & robot : controller().robots())
   {
     auto initq_it = initqs.find(robot.name());
-    if(initq_it != initqs.end())
-    {
-      initEncoders(robot, initq_it->second);
-    }
-    else
-    {
-      initEncoders(robot);
-    }
+    if(initq_it != initqs.end()) { initEncoders(robot, initq_it->second); }
+    else { initEncoders(robot); }
     auto initatt_it = initAttitudes.find(robot.name());
-    if(initatt_it != initAttitudes.end())
-    {
-      robot.posW(initatt_it->second);
-    }
+    if(initatt_it != initAttitudes.end()) { robot.posW(initatt_it->second); }
     else
     {
       auto & q = robot.mbc().q;
@@ -289,7 +293,6 @@ void MCGlobalController::reset(const std::map<std::string, std::vector<double>> 
 {
   controllers.erase(current_ctrl);
   setup_logger_.erase(current_ctrl);
-  pre_gripper_mbcs_.clear();
   config.load_controllers_configs();
   AddController(current_ctrl);
   controller_ = controllers[current_ctrl].get();
@@ -315,10 +318,7 @@ void MCGlobalController::initEncoders(mc_rbdyn::Robot & robot, const std::vector
     {
       auto jIndex = robot.jointIndexByName(jn);
       auto jDof = robot.mb().joint(static_cast<int>(jIndex)).dof();
-      if(jDof == 1)
-      {
-        q[jIndex][0] = initq[i];
-      }
+      if(jDof == 1) { q[jIndex][0] = initq[i]; }
       else if(jDof > 1)
       {
         mc_rtc::log::warning("Not using encoder values to initialize {}, please complain to mc_rtc maintainers",
@@ -326,10 +326,7 @@ void MCGlobalController::initEncoders(mc_rbdyn::Robot & robot, const std::vector
       }
     }
   }
-  for(auto & g : robot.grippers())
-  {
-    g.get().reset(initq);
-  }
+  for(auto & g : robot.grippers()) { g.get().reset(initq); }
   robot.forwardKinematics();
 }
 
@@ -337,10 +334,7 @@ void MCGlobalController::initEncoders(mc_rbdyn::Robot & robot)
 {
   // We only need to go through this to initialize the gripper, otherwise the robots are already initialized to the
   // stance configuration
-  if(robot.grippers().empty())
-  {
-    return;
-  }
+  if(robot.grippers().empty()) { return; }
   const auto & rjo = robot.refJointOrder();
   std::vector<double> rinitq;
   rinitq.reserve(rjo.size());
@@ -352,77 +346,61 @@ void MCGlobalController::initEncoders(mc_rbdyn::Robot & robot)
       const auto & q = robot.mbc().q[jIndex];
       if(q.size())
       {
-        for(const auto & qi : q)
-        {
-          rinitq.push_back(qi);
-        }
+        for(const auto & qi : q) { rinitq.push_back(qi); }
       }
-      else
-      {
-        rinitq.push_back(0.0);
-      }
+      else { rinitq.push_back(0.0); }
     }
-    else
-    {
-      rinitq.push_back(0.0);
-    }
+    else { rinitq.push_back(0.0); }
   }
-  for(auto & g : robot.grippers())
-  {
-    g.get().reset(rinitq);
-  }
+  for(auto & g : robot.grippers()) { g.get().reset(rinitq); }
 }
 
 void MCGlobalController::initController(bool reset)
 {
-  if(config.enable_log)
+  mc_solver::QPSolver::context_backend(controller_->solver().backend());
+  if(config.enable_log) { start_log(); }
+  const auto & q = controller().robot().mbc().q;
+  controller_->converters_.clear();
+  controller_->converters_.reserve(controller_->robots().size());
+  for(size_t i = 0; i < controller_->robots().size(); ++i)
   {
-    start_log();
+    const auto & input = controller_->robots().robot(i);
+    auto & output = controller_->outputRobots().robot(i);
+    controller_->converters_.emplace_back(input, output, input.module().controlToCanonicalConfig);
   }
-  const auto & q = robot().mbc().q;
   controller_->reset({q});
   controller_->resetObserverPipelines();
   initGUI();
   if(reset)
   {
-    for(auto & plugin : plugins_)
-    {
-      plugin.plugin->reset(*this);
-    }
+    for(auto & plugin : plugins_) { plugin.plugin->reset(*this); }
   }
   else
   {
-    for(auto & plugin : plugins_)
-    {
-      plugin.plugin->init(*this, config.global_plugin_configs[plugin.name]);
-    }
+    for(auto & plugin : plugins_) { plugin.plugin->init(*this, config.global_plugin_configs[plugin.name]); }
   }
   resetControllerPlugins();
 }
 
 void MCGlobalController::setSensorPosition(const Eigen::Vector3d & pos)
 {
-  robot().bodySensor().position(pos);
-  realRobot().bodySensor().position(pos);
+  controller().robot().data()->bodySensors[0].position(pos);
 }
 
 void MCGlobalController::setSensorPosition(const std::string & robotName, const Eigen::Vector3d & pos)
 {
-  robot(robotName).bodySensor().position(pos);
-  realRobot(robotName).bodySensor().position(pos);
+  controller().robot(robotName).data()->bodySensors[0].position(pos);
 }
 
 void MCGlobalController::setSensorPositions(const std::map<std::string, Eigen::Vector3d> & poses)
 {
-  setSensorPositions(robot(), poses);
-  setSensorPositions(realRobot(), poses);
+  setSensorPositions(controller().robot(), poses);
 }
 
 void MCGlobalController::setSensorPositions(const std::string & robotName,
                                             const std::map<std::string, Eigen::Vector3d> & poses)
 {
-  setSensorPositions(robot(robotName), poses);
-  setSensorPositions(realRobot(robotName), poses);
+  setSensorPositions(controller().robot(robotName), poses);
 }
 
 void MCGlobalController::setSensorPositions(mc_rbdyn::Robot & robot,
@@ -430,65 +408,57 @@ void MCGlobalController::setSensorPositions(mc_rbdyn::Robot & robot,
 {
   for(const auto & p : poses)
   {
-    robot.bodySensor(p.first).position(p.second);
+    robot.data()->bodySensors[robot.data()->bodySensorsIndex.at(p.first)].position(p.second);
   }
 }
 
 void MCGlobalController::setSensorOrientation(const Eigen::Quaterniond & ori)
 {
-  robot().bodySensor().orientation(ori);
-  realRobot().bodySensor().orientation(ori);
+  controller().robot().data()->bodySensors[0].orientation(ori);
 }
 
 void MCGlobalController::setSensorOrientation(const std::string & robotName, const Eigen::Quaterniond & ori)
 {
-  robot(robotName).bodySensor().orientation(ori);
-  realRobot(robotName).bodySensor().orientation(ori);
+  controller().robot(robotName).data()->bodySensors[0].orientation(ori);
 }
 
 void MCGlobalController::setSensorOrientations(const QuaternionMap & oris)
 {
-  setSensorOrientations(robot(), oris);
-  setSensorOrientations(realRobot(), oris);
+  setSensorOrientations(controller().robot(), oris);
 }
 
 void MCGlobalController::setSensorOrientations(const std::string & robotName, const QuaternionMap & oris)
 {
-  setSensorOrientations(robot(robotName), oris);
-  setSensorOrientations(realRobot(robotName), oris);
+  setSensorOrientations(controller().robot(robotName), oris);
 }
 
 void MCGlobalController::setSensorOrientations(mc_rbdyn::Robot & robot, const QuaternionMap & oris)
 {
   for(const auto & o : oris)
   {
-    robot.bodySensor(o.first).orientation(o.second);
+    robot.data()->bodySensors[robot.data()->bodySensorsIndex.at(o.first)].orientation(o.second);
   }
 }
 
 void MCGlobalController::setSensorLinearVelocity(const Eigen::Vector3d & vel)
 {
-  robot().bodySensor().linearVelocity(vel);
-  realRobot().bodySensor().linearVelocity(vel);
+  controller().robot().data()->bodySensors[0].linearVelocity(vel);
 }
 
 void MCGlobalController::setSensorLinearVelocity(const std::string & robotName, const Eigen::Vector3d & vel)
 {
-  robot(robotName).bodySensor().linearVelocity(vel);
-  realRobot(robotName).bodySensor().linearVelocity(vel);
+  controller().robot(robotName).data()->bodySensors[0].linearVelocity(vel);
 }
 
 void MCGlobalController::setSensorLinearVelocities(const std::map<std::string, Eigen::Vector3d> & linearVels)
 {
-  setSensorLinearVelocities(robot(), linearVels);
-  setSensorLinearVelocities(realRobot(), linearVels);
+  setSensorLinearVelocities(controller().robot(), linearVels);
 }
 
 void MCGlobalController::setSensorLinearVelocities(const std::string & robotName,
                                                    const std::map<std::string, Eigen::Vector3d> & linearVels)
 {
-  setSensorLinearVelocities(robot(robotName), linearVels);
-  setSensorLinearVelocities(realRobot(robotName), linearVels);
+  setSensorLinearVelocities(controller().robot(robotName), linearVels);
 }
 
 void MCGlobalController::setSensorLinearVelocities(mc_rbdyn::Robot & robot,
@@ -496,33 +466,29 @@ void MCGlobalController::setSensorLinearVelocities(mc_rbdyn::Robot & robot,
 {
   for(const auto & lv : linearVels)
   {
-    robot.bodySensor(lv.first).linearVelocity(lv.second);
+    robot.data()->bodySensors[robot.data()->bodySensorsIndex.at(lv.first)].linearVelocity(lv.second);
   }
 }
 
 void MCGlobalController::setSensorAngularVelocity(const Eigen::Vector3d & vel)
 {
-  robot().bodySensor().angularVelocity(vel);
-  realRobot().bodySensor().angularVelocity(vel);
+  controller().robot().data()->bodySensors[0].angularVelocity(vel);
 }
 
 void MCGlobalController::setSensorAngularVelocity(const std::string & name, const Eigen::Vector3d & vel)
 {
-  robot(name).bodySensor().angularVelocity(vel);
-  realRobot(name).bodySensor().angularVelocity(vel);
+  controller().robot(name).data()->bodySensors[0].angularVelocity(vel);
 }
 
 void MCGlobalController::setSensorAngularVelocities(const std::map<std::string, Eigen::Vector3d> & angularVels)
 {
-  setSensorAngularVelocities(robot(), angularVels);
-  setSensorAngularVelocities(realRobot(), angularVels);
+  setSensorAngularVelocities(controller().robot(), angularVels);
 }
 
 void MCGlobalController::setSensorAngularVelocities(const std::string & name,
                                                     const std::map<std::string, Eigen::Vector3d> & angularVels)
 {
-  setSensorAngularVelocities(robot(name), angularVels);
-  setSensorAngularVelocities(realRobot(name), angularVels);
+  setSensorAngularVelocities(controller().robot(name), angularVels);
 }
 
 void MCGlobalController::setSensorAngularVelocities(mc_rbdyn::Robot & robot,
@@ -530,7 +496,7 @@ void MCGlobalController::setSensorAngularVelocities(mc_rbdyn::Robot & robot,
 {
   for(const auto & av : angularVels)
   {
-    robot.bodySensor(av.first).angularVelocity(av.second);
+    robot.data()->bodySensors[robot.data()->bodySensorsIndex.at(av.first)].angularVelocity(av.second);
   }
 }
 
@@ -552,27 +518,23 @@ void MCGlobalController::setSensorAccelerations(mc_rbdyn::Robot & robot,
 
 void MCGlobalController::setSensorLinearAcceleration(const Eigen::Vector3d & acc)
 {
-  robot().bodySensor().linearAcceleration(acc);
-  realRobot().bodySensor().linearAcceleration(acc);
+  controller().robot().data()->bodySensors[0].linearAcceleration(acc);
 }
 
 void MCGlobalController::setSensorLinearAcceleration(const std::string & name, const Eigen::Vector3d & acc)
 {
-  robot(name).bodySensor().linearAcceleration(acc);
-  realRobot(name).bodySensor().linearAcceleration(acc);
+  controller().robot(name).data()->bodySensors[0].linearAcceleration(acc);
 }
 
 void MCGlobalController::setSensorLinearAccelerations(const std::map<std::string, Eigen::Vector3d> & accels)
 {
-  setSensorLinearAccelerations(robot(), accels);
-  setSensorLinearAccelerations(realRobot(), accels);
+  setSensorLinearAccelerations(controller().robot(), accels);
 }
 
 void MCGlobalController::setSensorLinearAccelerations(const std::string & name,
                                                       const std::map<std::string, Eigen::Vector3d> & accels)
 {
-  setSensorLinearAccelerations(robot(name), accels);
-  setSensorLinearAccelerations(realRobot(name), accels);
+  setSensorLinearAccelerations(controller().robot(name), accels);
 }
 
 void MCGlobalController::setSensorLinearAccelerations(mc_rbdyn::Robot & robot,
@@ -580,20 +542,24 @@ void MCGlobalController::setSensorLinearAccelerations(mc_rbdyn::Robot & robot,
 {
   for(const auto & a : accels)
   {
-    robot.bodySensor(a.first).linearAcceleration(a.second);
+    robot.data()->bodySensors[robot.data()->bodySensorsIndex.at(a.first)].linearAcceleration(a.second);
   }
 }
 
 void MCGlobalController::setSensorAngularAcceleration(const Eigen::Vector3d & acc)
 {
-  robot().bodySensor().angularAcceleration(acc);
-  realRobot().bodySensor().angularAcceleration(acc);
+  controller().robot().data()->bodySensors[0].angularAcceleration(acc);
 }
 
 void MCGlobalController::setSensorAngularAccelerations(const std::map<std::string, Eigen::Vector3d> & accels)
 {
-  setSensorAngularAccelerations(robot(), accels);
-  setSensorAngularAccelerations(realRobot(), accels);
+  setSensorAngularAccelerations(controller().robot(), accels);
+}
+
+void MCGlobalController::setSensorAngularAccelerations(const std::string & name,
+                                                       const std::map<std::string, Eigen::Vector3d> & accels)
+{
+  setSensorAngularAccelerations(controller().robot(name), accels);
 }
 
 void MCGlobalController::setSensorAngularAccelerations(mc_rbdyn::Robot & robot,
@@ -601,56 +567,38 @@ void MCGlobalController::setSensorAngularAccelerations(mc_rbdyn::Robot & robot,
 {
   for(const auto & a : accels)
   {
-    robot.bodySensor(a.first).angularAcceleration(a.second);
+    robot.data()->bodySensors[robot.data()->bodySensorsIndex.at(a.first)].angularAcceleration(a.second);
   }
 }
 
 void MCGlobalController::setEncoderValues(const std::vector<double> & eValues)
 {
-  robot().encoderValues(eValues);
-  realRobot().encoderValues(eValues);
+  controller().robot().data()->encoderValues = eValues;
 }
 
 void MCGlobalController::setEncoderValues(const std::string & robotName, const std::vector<double> & eValues)
 {
-  robot(robotName).encoderValues(eValues);
-  realRobot(robotName).encoderValues(eValues);
+  controller().robot(robotName).data()->encoderValues = eValues;
 }
 
 void MCGlobalController::setEncoderVelocities(const std::vector<double> & eVelocities)
 {
-  robot().encoderVelocities(eVelocities);
-  realRobot().encoderVelocities(eVelocities);
+  controller().robot().data()->encoderVelocities = eVelocities;
 }
 
 void MCGlobalController::setEncoderVelocities(const std::string & robotName, const std::vector<double> & eVelocities)
 {
-  robot(robotName).encoderVelocities(eVelocities);
-  realRobot(robotName).encoderVelocities(eVelocities);
-}
-
-void MCGlobalController::setFlexibilityValues(const std::vector<double> & fValues)
-{
-  robot().flexibilityValues(fValues);
-  realRobot().flexibilityValues(fValues);
-}
-
-void MCGlobalController::setFlexibilityValues(const std::string & robotName, const std::vector<double> & fValues)
-{
-  robot(robotName).flexibilityValues(fValues);
-  realRobot(robotName).flexibilityValues(fValues);
+  controller().robot(robotName).data()->encoderVelocities = eVelocities;
 }
 
 void MCGlobalController::setJointTorques(const std::vector<double> & tValues)
 {
-  robot().jointTorques(tValues);
-  realRobot().jointTorques(tValues);
+  controller().robot().data()->jointTorques = tValues;
 }
 
 void MCGlobalController::setJointTorques(const std::string & robotName, const std::vector<double> & tValues)
 {
-  robot(robotName).jointTorques(tValues);
-  realRobot(robotName).jointTorques(tValues);
+  controller().robot(robotName).data()->jointTorques = tValues;
 }
 
 void MCGlobalController::setWrenches(const std::map<std::string, sva::ForceVecd> & wrenches)
@@ -661,12 +609,10 @@ void MCGlobalController::setWrenches(const std::map<std::string, sva::ForceVecd>
 void MCGlobalController::setWrenches(const std::string & robotName,
                                      const std::map<std::string, sva::ForceVecd> & wrenches)
 {
-  auto & robot = this->robot(robotName);
-  auto & realRobot = this->realRobot(robotName);
+  auto & robot = controller().robot(robotName);
   for(const auto & w : wrenches)
   {
-    robot.forceSensor(w.first).wrench(w.second);
-    realRobot.forceSensor(w.first).wrench(w.second);
+    robot.data()->forceSensors[robot.data()->forceSensorsIndex.at(w.first)].wrench(w.second);
   }
 }
 
@@ -674,12 +620,7 @@ void MCGlobalController::setWrenches(const std::string & robotName,
 void MCGlobalController::setWrenches(unsigned int robotIndex, const std::map<std::string, sva::ForceVecd> & wrenches)
 {
   auto & robot = controller_->robots().robot(robotIndex);
-  auto & realRobot = controller_->realRobots().robot(robotIndex);
-  for(const auto & w : wrenches)
-  {
-    robot.forceSensor(w.first).wrench(w.second);
-    realRobot.forceSensor(w.first).wrench(w.second);
-  }
+  setWrenches(robot.name(), wrenches);
 }
 
 void MCGlobalController::setJointMotorTemperature(const std::string & joint, double temperature)
@@ -691,10 +632,9 @@ void MCGlobalController::setJointMotorTemperature(const std::string & robotName,
                                                   const std::string & joint,
                                                   double temperature)
 {
-  auto & robot = this->robot(robotName);
-  auto & realRobot = this->realRobot(robotName);
-  robot.jointJointSensor(joint).motorTemperature(temperature);
-  realRobot.jointJointSensor(joint).motorTemperature(temperature);
+  auto & robot = controller().robot(robotName);
+  auto & sensors = robot.data()->jointSensors;
+  sensors[robot.data()->jointJointSensors.at(joint)].motorTemperature(temperature);
 }
 
 void MCGlobalController::setJointMotorTemperatures(const std::map<std::string, double> & temperatures)
@@ -705,12 +645,11 @@ void MCGlobalController::setJointMotorTemperatures(const std::map<std::string, d
 void MCGlobalController::setJointMotorTemperatures(const std::string & robotName,
                                                    const std::map<std::string, double> & temperatures)
 {
-  auto & robot = this->robot(robotName);
-  auto & realRobot = this->realRobot(robotName);
+  auto & robot = controller().robot(robotName);
+  auto & sensors = robot.data()->jointSensors;
   for(const auto & t : temperatures)
   {
-    robot.jointJointSensor(t.first).motorTemperature(t.second);
-    realRobot.jointJointSensor(t.first).motorTemperature(t.second);
+    sensors[robot.data()->jointJointSensors.at(t.first)].motorTemperature(t.second);
   }
 }
 
@@ -723,10 +662,9 @@ void MCGlobalController::setJointDriverTemperature(const std::string & robotName
                                                    const std::string & joint,
                                                    double temperature)
 {
-  auto & robot = this->robot(robotName);
-  auto & realRobot = this->realRobot(robotName);
-  robot.jointJointSensor(joint).motorTemperature(temperature);
-  realRobot.jointJointSensor(joint).motorTemperature(temperature);
+  auto & robot = controller().robot(robotName);
+  auto & sensors = robot.data()->jointSensors;
+  sensors[robot.data()->jointJointSensors.at(joint)].driverTemperature(temperature);
 }
 
 void MCGlobalController::setJointDriverTemperatures(const std::map<std::string, double> & temperatures)
@@ -737,12 +675,11 @@ void MCGlobalController::setJointDriverTemperatures(const std::map<std::string, 
 void MCGlobalController::setJointDriverTemperatures(const std::string & robotName,
                                                     const std::map<std::string, double> & temperatures)
 {
-  auto & robot = this->robot(robotName);
-  auto & realRobot = this->realRobot(robotName);
+  auto & robot = controller().robot(robotName);
+  auto & sensors = robot.data()->jointSensors;
   for(const auto & t : temperatures)
   {
-    robot.jointJointSensor(t.first).motorTemperature(t.second);
-    realRobot.jointJointSensor(t.first).motorTemperature(t.second);
+    sensors[robot.data()->jointJointSensors.at(t.first)].driverTemperature(t.second);
   }
 }
 
@@ -753,10 +690,9 @@ void MCGlobalController::setJointMotorCurrent(const std::string & joint, double 
 
 void MCGlobalController::setJointMotorCurrent(const std::string & robotName, const std::string & joint, double current)
 {
-  auto & robot = this->robot(robotName);
-  auto & realRobot = this->realRobot(robotName);
-  robot.jointJointSensor(joint).motorCurrent(current);
-  realRobot.jointJointSensor(joint).motorCurrent(current);
+  auto & robot = controller().robot(robotName);
+  auto & sensors = robot.data()->jointSensors;
+  sensors[robot.data()->jointJointSensors.at(joint)].motorCurrent(current);
 }
 
 void MCGlobalController::setJointMotorCurrents(const std::map<std::string, double> & currents)
@@ -767,13 +703,9 @@ void MCGlobalController::setJointMotorCurrents(const std::map<std::string, doubl
 void MCGlobalController::setJointMotorCurrents(const std::string & robotName,
                                                const std::map<std::string, double> & currents)
 {
-  auto & robot = this->robot(robotName);
-  auto & realRobot = this->realRobot(robotName);
-  for(const auto & c : currents)
-  {
-    robot.jointJointSensor(c.first).motorCurrent(c.second);
-    realRobot.jointJointSensor(c.first).motorCurrent(c.second);
-  }
+  auto & robot = controller().robot(robotName);
+  auto & sensors = robot.data()->jointSensors;
+  for(const auto & c : currents) { sensors[robot.data()->jointJointSensors.at(c.first)].motorCurrent(c.second); }
 }
 
 bool MCGlobalController::run()
@@ -782,8 +714,6 @@ bool MCGlobalController::run()
   using clock = typename std::conditional<std::chrono::high_resolution_clock::is_steady,
                                           std::chrono::high_resolution_clock, std::chrono::steady_clock>::type;
   /** Helper to converst Tasks' timer */
-  using boost_ms = boost::chrono::duration<double, boost::milli>;
-  using boost_ns = boost::chrono::duration<double, boost::nano>;
   auto start_run_t = clock::now();
   /* Check if we need to change the controller this time */
   if(next_controller_)
@@ -791,7 +721,7 @@ bool MCGlobalController::run()
     mc_rtc::log::info("Switching controllers");
     if(controller_)
     {
-      for(auto & bs : next_controller_->robot().bodySensors())
+      for(auto & bs : next_controller_->robot().data()->bodySensors)
       {
         const auto & current = controller_->robot().bodySensor(bs.name());
         bs.position(current.position());
@@ -801,47 +731,28 @@ bool MCGlobalController::run()
         bs.linearAcceleration(current.linearAcceleration());
         bs.angularAcceleration(current.angularAcceleration());
       }
-      next_controller_->robot().encoderValues(controller_->robot().encoderValues());
-      next_controller_->realRobot().encoderValues(controller_->robot().encoderValues());
-      next_controller_->robot().encoderVelocities(controller_->robot().encoderVelocities());
-      next_controller_->realRobot().encoderVelocities(controller_->robot().encoderVelocities());
-      next_controller_->robot().jointTorques(controller_->robot().jointTorques());
-      next_controller_->realRobot().jointTorques(controller_->robot().jointTorques());
-      for(auto & fs : next_controller_->robot().forceSensors())
+      next_controller_->robot().data()->encoderValues = controller_->robot().encoderValues();
+      next_controller_->robot().data()->encoderVelocities = controller_->robot().encoderVelocities();
+      next_controller_->robot().data()->jointTorques = controller_->robot().jointTorques();
+      for(auto & fs : next_controller_->robot().data()->forceSensors)
       {
         fs.wrench(controller_->robot().forceSensor(fs.name()).wrench());
       }
-      for(auto & fs : next_controller_->realRobot().forceSensors())
-      {
-        fs.wrench(controller_->realRobot().forceSensor(fs.name()).wrench());
-      }
-      for(auto & js : next_controller_->robot().jointSensors())
+      for(auto & js : next_controller_->robot().data()->jointSensors)
       {
         js.motorTemperature(controller_->robot().jointJointSensor(js.joint()).motorTemperature());
         js.driverTemperature(controller_->robot().jointJointSensor(js.joint()).driverTemperature());
         js.motorCurrent(controller_->robot().jointJointSensor(js.joint()).motorCurrent());
       }
-      for(auto & js : next_controller_->realRobot().jointSensors())
-      {
-        js.motorTemperature(controller_->realRobot().jointJointSensor(js.joint()).motorTemperature());
-        js.driverTemperature(controller_->realRobot().jointJointSensor(js.joint()).driverTemperature());
-        js.motorCurrent(controller_->realRobot().jointJointSensor(js.joint()).motorCurrent());
-      }
       next_controller_->realRobot().mbc() = controller_->realRobot().mbc();
     }
-    if(!running)
-    {
-      controller_ = next_controller_;
-    }
+    if(!running) { controller_ = next_controller_; }
     else
     {
       // Remove observer pipelines created by MCController::createObserverPipelines
       for(auto & pipeline : controller_->observerPipelines())
       {
-        if(controller_->gui_)
-        {
-          pipeline.removeFromGUI(*controller_->gui());
-        }
+        if(controller_->gui_) { pipeline.removeFromGUI(*controller_->gui()); }
         pipeline.removeFromLogger(controller_->logger());
       }
       controller_->stop();
@@ -850,36 +761,28 @@ bool MCGlobalController::run()
       {
         next_controller_->robot().gripper(g.first).reset(*g.second);
       }
+      mc_solver::QPSolver::context_backend(next_controller_->solver().backend());
       next_controller_->reset({controller_->robot().mbc().q});
       next_controller_->resetObserverPipelines();
       controller_ = next_controller_;
-      /** Reset plugins */
-      for(auto & plugin : plugins_)
-      {
-        plugin.plugin->reset(*this);
-      }
+      /** Reset global plugins */
+      for(auto & plugin : plugins_) { plugin.plugin->reset(*this); }
       resetControllerPlugins();
     }
     next_controller_ = nullptr;
     current_ctrl = next_ctrl;
-    if(config.enable_log)
-    {
-      start_log();
-    }
+    if(config.enable_log) { start_log(); }
     initGUI();
     mc_rtc::log::success("Controller {} activated", current_ctrl);
   }
   if(running)
   {
+    mc_solver::QPSolver::context_backend(controller_->solver().backend());
     for(auto & plugin : plugins_before_)
     {
       auto start_t = clock::now();
       plugin.plugin->before(*this);
       plugin.plugin_before_dt = clock::now() - start_t;
-    }
-    for(size_t i = 0; i < pre_gripper_mbcs_.size() && i < controller_->robots().size(); ++i)
-    {
-      controller_->robots().robot(i).mbc() = pre_gripper_mbcs_[i];
     }
     auto start_observers_run_t = clock::now();
     controller_->runObserverPipelines();
@@ -889,26 +792,22 @@ bool MCGlobalController::run()
     bool r = controller_->run();
     auto end_controller_run_t = clock::now();
 
-    pre_gripper_mbcs_ = controller_->robots().mbcs();
     for(size_t i = 0; i < controller_->robots().size(); ++i)
     {
-      const auto & gi = controller_->robots().robot(i).grippers();
-      if(gi.empty())
+      auto & robot = controller_->robots().robot(i);
+      auto & realRobot = controller_->realRobots().robot(i);
+      auto & outputRobot = controller_->outputRobots().robot(i);
+      auto & outputRealRobot = controller_->outputRealRobots().robot(i);
+      controller_->converters_[i].convert(robot, outputRobot);
+      controller_->converters_[i].convert(realRobot, outputRealRobot);
+      const auto & gi = robot.grippers();
+      if(!gi.empty())
       {
-        continue;
+        for(auto & g : gi) { g.get().run(controller_->timeStep, outputRobot, outputRealRobot); }
+        outputRobot.forwardKinematics();
       }
-      for(auto & g : gi)
-      {
-        g.get().run(controller_->timeStep, controller_->robots().robot(i),
-                    controller_->solver().result().robots_state[i].q);
-      }
-      controller_->robots().robot(i).forwardKinematics();
-    }
-    if(config.enable_log)
-    {
-      auto start_log_t = clock::now();
-      controller_->logger().log();
-      log_dt = clock::now() - start_log_t;
+      robot.module().controlToCanonicalPostProcess(robot, outputRobot);
+      robot.module().controlToCanonicalPostProcess(realRobot, outputRealRobot);
     }
     if(server_)
     {
@@ -918,25 +817,25 @@ bool MCGlobalController::run()
       gui_dt = clock::now() - start_gui_t;
     }
     controller_run_dt = end_controller_run_t - start_controller_run_t;
-    solver_build_and_solve_t = boost_ms(boost_ns(controller_->solver().solveAndBuildTime().wall)).count();
-    solver_solve_t = boost_ms(boost_ns(controller_->solver().solveTime().wall)).count();
-    if(!r)
-    {
-      running = false;
-    }
+    solver_build_and_solve_t = controller_->solver().solveAndBuildTime();
+    solver_solve_t = controller_->solver().solveTime();
+    if(!r) { running = false; }
     for(auto & plugin : plugins_after_)
     {
       auto start_t = clock::now();
       plugin.plugin->after(*this);
       plugin.plugin_after_dt = clock::now() - start_t;
     }
+    if(config.enable_log)
+    {
+      auto start_log_t = clock::now();
+      controller_->logger().log();
+      log_dt = clock::now() - start_log_t;
+    }
   }
   else
   {
-    for(auto & plugin : plugins_before_always_)
-    {
-      plugin->before(*this);
-    }
+    for(auto & plugin : plugins_before_always_) { plugin->before(*this); }
     controller_run_dt.zero();
     solver_build_and_solve_t = 0;
     solver_solve_t = 0;
@@ -947,10 +846,7 @@ bool MCGlobalController::run()
       server_->publish(*controller_->gui_);
       gui_dt = clock::now() - start_gui_t;
     }
-    for(auto & plugin : plugins_after_always_)
-    {
-      plugin->after(*this);
-    }
+    for(auto & plugin : plugins_after_always_) { plugin->after(*this); }
   }
   global_run_dt = clock::now() - start_run_t;
   // Percentage of time not spent inside the user code
@@ -962,83 +858,6 @@ ControllerServer & MCGlobalController::server()
 {
   assert(server_);
   return *server_;
-}
-
-const mc_solver::QPResultMsg & MCGlobalController::send(const double & t)
-{
-  return controller_->send(t);
-}
-
-MCController & MCGlobalController::controller()
-{
-  assert(controller_ != nullptr);
-  return *controller_;
-}
-
-const MCController & MCGlobalController::controller() const
-{
-  assert(controller_ != nullptr);
-  return *controller_;
-}
-
-mc_rbdyn::Robots & MCGlobalController::realRobots()
-{
-  return controller_->realRobots();
-}
-
-const mc_rbdyn::Robots & MCGlobalController::realRobots() const
-{
-  return controller_->realRobots();
-}
-
-mc_rbdyn::Robots & MCGlobalController::robots()
-{
-  return controller_->robots();
-}
-
-const mc_rbdyn::Robots & MCGlobalController::robots() const
-{
-  return controller_->robots();
-}
-
-mc_rbdyn::Robot & MCGlobalController::robot()
-{
-  return controller_->robot();
-}
-
-const mc_rbdyn::Robot & MCGlobalController::robot() const
-{
-  return controller_->robot();
-}
-
-mc_rbdyn::Robot & MCGlobalController::robot(const std::string & name)
-{
-  return robots().robot(name);
-}
-
-const mc_rbdyn::Robot & MCGlobalController::robot(const std::string & name) const
-{
-  return robots().robot(name);
-}
-
-mc_rbdyn::Robot & MCGlobalController::realRobot()
-{
-  return controller_->realRobot();
-}
-
-const mc_rbdyn::Robot & MCGlobalController::realRobot() const
-{
-  return controller_->realRobot();
-}
-
-mc_rbdyn::Robot & MCGlobalController::realRobot(const std::string & name)
-{
-  return realRobots().robot(name);
-}
-
-const mc_rbdyn::Robot & MCGlobalController::realRobot(const std::string & name) const
-{
-  return realRobots().robot(name);
 }
 
 void MCGlobalController::setGripperTargetQ(const std::string & robot,
@@ -1059,10 +878,7 @@ void MCGlobalController::setGripperTargetQ(const std::string & robot,
 void MCGlobalController::setGripperOpenPercent(const std::string & robot, double pOpen)
 {
   auto & r = controller_->robots().robot(robot);
-  for(auto & g : r.grippers())
-  {
-    g.get().setTargetOpening(pOpen);
-  }
+  for(auto & g : r.grippers()) { g.get().setTargetOpening(pOpen); }
 }
 
 void MCGlobalController::setGripperOpenPercent(const std::string & robot, const std::string & name, double pOpen)
@@ -1085,7 +901,7 @@ double MCGlobalController::timestep() const
 
 const std::vector<std::string> & MCGlobalController::ref_joint_order()
 {
-  return robot().refJointOrder();
+  return controller().robot().refJointOrder();
 }
 
 bool MCGlobalController::AddController(const std::string & name)
@@ -1122,7 +938,6 @@ bool MCGlobalController::AddController(const std::string & name)
       controllers[name] = controller_loader->create_object(name, config.main_robot_module, config.timestep,
                                                            config.controllers_configs[name]);
     }
-    controllers[name]->name_ = name;
     controllers[name]->datastore().make_call("Global::EnableController",
                                              [this](const std::string & name) { return EnableController(name); });
     if(config.enable_log)
@@ -1174,24 +989,15 @@ bool MCGlobalController::EnableController(const std::string & name)
   }
   else
   {
-    if(name == current_ctrl)
-    {
-      mc_rtc::log::error("{} controller already enabled.", name);
-    }
-    else
-    {
-      mc_rtc::log::error("{} controller not enabled.", name);
-    }
+    if(name == current_ctrl) { mc_rtc::log::error("{} controller already enabled.", name); }
+    else { mc_rtc::log::error("{} controller not enabled.", name); }
     return false;
   }
 }
 
 bool MCGlobalController::GoToHalfSitPose()
 {
-  if(current_ctrl != std::string("HalfSitPose"))
-  {
-    return EnableController("HalfSitPose");
-  }
+  if(current_ctrl != std::string("HalfSitPose")) { return EnableController("HalfSitPose"); }
   return true;
 }
 
@@ -1199,6 +1005,7 @@ void MCGlobalController::start_log()
 {
   controller_->logger().start(current_ctrl, controller_->timeStep);
   setup_log();
+  if(server_) { server_->set_logger(controller_->logger_); }
 }
 
 void MCGlobalController::refreshLog()
@@ -1209,10 +1016,13 @@ void MCGlobalController::refreshLog()
 
 void MCGlobalController::setup_log()
 {
-  if(setup_logger_.count(current_ctrl))
-  {
-    return;
-  }
+  auto & meta = controller_->logger().meta();
+  meta.timestep = controller_->timeStep;
+  meta.main_robot = controller_->robot().name();
+  meta.main_robot_module = controller_->robot().module().parameters();
+  meta.init.clear();
+  for(const auto & r : controller_->robots()) { meta.init[r.name()] = r.posW(); }
+  if(setup_logger_.count(current_ctrl)) { return; }
   // Copy controller pointer to avoid lambda issue
   MCController * controller = controller_;
   // Performance measures
@@ -1224,34 +1034,15 @@ void MCGlobalController::setup_log()
   controller->logger().addLogEntry("perf_Log", [this]() { return log_dt.count(); });
   controller->logger().addLogEntry("perf_Gui", [this]() { return gui_dt.count(); });
   controller->logger().addLogEntry("perf_FrameworkCost", [this]() { return framework_cost; });
-  auto getPluginName = [this](GlobalPlugin * plugin) -> const std::string & {
-    for(auto & p : plugins_)
-    {
-      if(p.plugin.get() == plugin)
-      {
-        return p.name;
-      }
-    }
-    mc_rtc::log::error_and_throw(
-        "Impossible error, searched for a plugin name from a pointer to a plugin that was not loaded");
-  };
-  for(const auto & plugin : plugins_before_)
-  {
-    const auto & name = getPluginName(plugin.plugin);
-    controller->logger().addLogEntry(fmt::format("perf_Plugins_{}_before", name),
-                                     [&plugin]() { return plugin.plugin_before_dt.count(); });
-  }
-  for(const auto & plugin : plugins_after_)
-  {
-    const auto & name = getPluginName(plugin.plugin);
-    controller->logger().addLogEntry(fmt::format("perf_Plugins_{}_after", name),
-                                     [&plugin]() { return plugin.plugin_after_dt.count(); });
-  }
   // Log system wall time as nanoseconds since epoch (can be used to manage synchronization with ros)
-  controller->logger().addLogEntry("timeWall", []() -> int64_t {
-    int64_t nanoseconds_since_epoch = std::chrono::system_clock::now().time_since_epoch() / std::chrono::nanoseconds(1);
-    return nanoseconds_since_epoch;
-  });
+  controller->logger().addLogEntry("timeWall",
+                                   []() -> int64_t
+                                   {
+                                     int64_t nanoseconds_since_epoch =
+                                         std::chrono::system_clock::now().time_since_epoch()
+                                         / std::chrono::nanoseconds(1);
+                                     return nanoseconds_since_epoch;
+                                   });
   setup_logger_[current_ctrl] = true;
 }
 
@@ -1270,18 +1061,12 @@ GlobalPlugin * MCGlobalController::loadPlugin(const std::string & name, const ch
     if(plugin_config.should_run_before)
     {
       plugins_before_.push_back({plugin, duration_ms{0}});
-      if(plugin_config.should_always_run)
-      {
-        plugins_before_always_.push_back(plugin);
-      }
+      if(plugin_config.should_always_run) { plugins_before_always_.push_back(plugin); }
     }
     if(plugin_config.should_run_after)
     {
       plugins_after_.push_back({plugin, duration_ms{0}});
-      if(plugin_config.should_always_run)
-      {
-        plugins_after_always_.push_back(plugin);
-      }
+      if(plugin_config.should_always_run) { plugins_after_always_.push_back(plugin); }
     }
     return plugin;
   }
@@ -1302,10 +1087,7 @@ void MCGlobalController::resetControllerPlugins()
   for(const auto & p : plugins_)
   {
     auto it = std::find(next_ctrl_plugins.begin(), next_ctrl_plugins.end(), p.name);
-    if(it != next_ctrl_plugins.end())
-    {
-      next_ctrl_plugins.erase(it);
-    }
+    if(it != next_ctrl_plugins.end()) { next_ctrl_plugins.erase(it); }
   }
   // Go over controller plugins that are already loaded
   for(auto it = controller_plugins_.begin(); it != controller_plugins_.end();)
@@ -1318,26 +1100,14 @@ void MCGlobalController::resetControllerPlugins()
       // First we remove the plugin from the before/always lists as needed
       auto it_before = std::find_if(plugins_before_.begin(), plugins_before_.end(),
                                     [&](const PluginBefore & p) { return p.plugin == it->plugin.get(); });
-      if(it_before != plugins_before_.end())
-      {
-        plugins_before_.erase(it_before);
-      }
+      if(it_before != plugins_before_.end()) { plugins_before_.erase(it_before); }
       auto it_before_always = std::find(plugins_before_always_.begin(), plugins_before_always_.end(), it->plugin.get());
-      if(it_before_always != plugins_before_always_.end())
-      {
-        plugins_before_always_.erase(it_before_always);
-      }
+      if(it_before_always != plugins_before_always_.end()) { plugins_before_always_.erase(it_before_always); }
       auto it_after = std::find_if(plugins_after_.begin(), plugins_after_.end(),
                                    [&](const PluginAfter & p) { return p.plugin == it->plugin.get(); });
-      if(it_after != plugins_after_.end())
-      {
-        plugins_after_.erase(it_after);
-      }
+      if(it_after != plugins_after_.end()) { plugins_after_.erase(it_after); }
       auto it_after_always = std::find(plugins_after_always_.begin(), plugins_after_always_.end(), it->plugin.get());
-      if(it_after_always != plugins_after_always_.end())
-      {
-        plugins_after_always_.erase(it_after_always);
-      }
+      if(it_after_always != plugins_after_always_.end()) { plugins_after_always_.erase(it_after_always); }
       // Finally we can remove the handle
       it = controller_plugins_.erase(it);
     }
@@ -1352,10 +1122,33 @@ void MCGlobalController::resetControllerPlugins()
   for(const auto & name : next_ctrl_plugins)
   {
     auto plugin = loadPlugin(name, next_ctrl.c_str());
-    if(plugin)
+    if(plugin) { plugin->init(*this, config.global_plugin_configs[name]); }
+  }
+  setup_plugin_log();
+}
+
+void MCGlobalController::setup_plugin_log()
+{
+  auto getPluginName = [this](GlobalPlugin * plugin) -> const std::string &
+  {
+    for(auto & p : plugins_)
     {
-      plugin->init(*this, config.global_plugin_configs[name]);
+      if(p.plugin.get() == plugin) { return p.name; }
     }
+    mc_rtc::log::error_and_throw(
+        "Impossible error, searched for a plugin name from a pointer to a plugin that was not loaded");
+  };
+  for(const auto & plugin : plugins_before_)
+  {
+    const auto & name = getPluginName(plugin.plugin);
+    controller_->logger().addLogEntry(
+        fmt::format("perf_Plugins_{}_before", name), [&plugin]() { return plugin.plugin_before_dt.count(); }, true);
+  }
+  for(const auto & plugin : plugins_after_)
+  {
+    const auto & name = getPluginName(plugin.plugin);
+    controller_->logger().addLogEntry(
+        fmt::format("perf_Plugins_{}_after", name), [&plugin]() { return plugin.plugin_after_dt.count(); }, true);
   }
 }
 

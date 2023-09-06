@@ -44,10 +44,7 @@ struct MC_RTC_LOADER_DLLAPI LoaderException : public std::exception
 public:
   LoaderException(const std::string & what) : what_(what) {}
 
-  virtual const char * what() const noexcept override
-  {
-    return what_.c_str();
-  }
+  virtual const char * what() const noexcept override { return what_.c_str(); }
 
 private:
   std::string what_;
@@ -100,22 +97,16 @@ struct MC_RTC_LOADER_DLLAPI LTDLHandle
   SymT get_symbol(const std::string & name);
 
   /** True if the library is valid */
-  inline bool valid() const
-  {
-    return valid_;
-  }
+  inline bool valid() const { return valid_; }
 
   /** Returns a list of available classes provided by this library */
-  inline const std::vector<std::string> & classes() const
-  {
-    return classes_;
-  }
+  inline const std::vector<std::string> & classes() const { return classes_; }
 
   /** Access the path to the library */
-  inline const std::string & path() const
-  {
-    return path_;
-  }
+  inline const std::string & path() const { return path_; }
+
+  /** Access the library folder location */
+  std::string dir() const;
 
 private:
   std::string path_;
@@ -261,6 +252,14 @@ public:
    */
   template<typename... Args>
   std::shared_ptr<T> create_object(const std::string & name, Args... args);
+
+  /** Returns the runtime directory of an object
+   *
+   * Returns an empty string when the object is registered via a callback or if the object is unknown
+   *
+   * \param name Name of the object
+   */
+  std::string get_object_runtime_directory(const std::string & name) const noexcept;
 
   struct ObjectDeleter
   {

@@ -1,10 +1,12 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #include <mc_rbdyn/RobotLoader.h>
 #include <mc_rbdyn/Robots.h>
-#include <mc_solver/QPSolver.h>
+
+#include <mc_solver/TasksQPSolver.h>
+
 #include <mc_tasks/CoMTask.h>
 
 #include <boost/test/unit_test.hpp>
@@ -17,10 +19,7 @@
 struct CheckCoMTask : public mc_tasks::CoMTask
 {
   CheckCoMTask(const mc_rbdyn::Robots & robots, unsigned int robotIndex) : mc_tasks::CoMTask(robots, robotIndex) {}
-  virtual ~CheckCoMTask() override
-  {
-    deleted = true;
-  }
+  virtual ~CheckCoMTask() override { deleted = true; }
   static bool deleted;
 };
 
@@ -31,7 +30,7 @@ BOOST_AUTO_TEST_CASE(TestSolverTaskStorage)
   configureRobotLoader();
   auto rm = mc_rbdyn::RobotLoader::get_robot_module("JVRC1");
   auto robots = mc_rbdyn::loadRobot(*rm);
-  mc_solver::QPSolver solver(robots, 0.005);
+  mc_solver::TasksQPSolver solver(robots, 0.005);
   CheckCoMTask * t_ptr = nullptr;
   {
     auto t = std::make_shared<CheckCoMTask>(solver.robots(), 0);

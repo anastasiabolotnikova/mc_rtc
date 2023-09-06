@@ -5,6 +5,7 @@ usr/include/mc_robots/*
 usr/include/mc_rtc/*
 usr/include/mc_solver/*
 usr/include/mc_tasks/*
+usr/include/mc_tvm/*
 usr/include/mc_trajectory/*
 usr/include/mc_planning/*
 usr/include/mc_filter/*
@@ -17,7 +18,6 @@ usr/lib/*/libmc_rtc_gui.so
 usr/lib/*/libmc_solver.so
 usr/lib/*/libmc_trajectory.so
 usr/lib/*/libmc_tasks.so
-usr/lib/*/libmc_observers.so
 usr/lib/*/libmc_control.so
 usr/lib/*/libmc_control_client.so
 usr/lib/*/libmc_control_fsm.so

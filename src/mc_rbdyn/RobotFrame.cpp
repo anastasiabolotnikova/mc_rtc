@@ -2,6 +2,8 @@
 
 #include <mc_rbdyn/Robot.h>
 
+#include <mc_tvm/RobotFrame.h>
+
 namespace mc_rbdyn
 {
 
@@ -34,45 +36,33 @@ const std::string & RobotFrame::body() const noexcept
 
 sva::PTransformd RobotFrame::position() const noexcept
 {
-  if(!parent_)
-  {
-    return position_ * robot_.mbc().bodyPosW[bodyMbcIdx_];
-  }
+  if(!parent_) { return position_ * robot_.mbc().bodyPosW[bodyMbcIdx_]; }
   return position_ * static_cast<RobotFrame *>(parent_.get())->position();
 }
 
 sva::MotionVecd RobotFrame::velocity() const noexcept
 {
-  if(!parent_)
-  {
-    return position_ * robot_.mbc().bodyVelW[bodyMbcIdx_];
-  }
-  return position_ * static_cast<RobotFrame *>(parent_.get())->velocity();
+  auto X_0_parent = parent_ ? parent_->position() : robot_.mbc().bodyPosW[bodyMbcIdx_];
+  auto vel = parent_ ? static_cast<RobotFrame *>(parent_.get())->velocity() : robot_.mbc().bodyVelW[bodyMbcIdx_];
+  vel.linear() += -hat(X_0_parent.rotation().transpose() * position_.translation()) * vel.angular();
+  return vel;
 }
 
 const ForceSensor & RobotFrame::forceSensor() const
 {
-  if(!sensor_)
-  {
-    mc_rtc::log::error_and_throw("No force sensor attached to {} in {}", name_, robot_.name());
-  }
+  if(!sensor_) { mc_rtc::log::error_and_throw("No force sensor attached to {} in {}", name_, robot_.name()); }
   return *sensor_;
 }
 
 sva::ForceVecd RobotFrame::wrench() const
 {
-  if(!sensor_)
-  {
-    mc_rtc::log::error_and_throw("No force sensor attached to {} in {}", name_, robot_.name());
-  }
+  if(!sensor_) { mc_rtc::log::error_and_throw("No force sensor attached to {} in {}", name_, robot_.name()); }
   if(!parent_)
   {
     // Find the transformation from the sensor to the frame
-    auto X_fsactual_body = [this]() {
-      if(sensor_->parent() == body())
-      {
-        return position_ * sensor_->X_fsactual_parent();
-      }
+    auto X_fsactual_body = [this]()
+    {
+      if(sensor_->parent() == body()) { return position_ * sensor_->X_fsactual_parent(); }
       else
       {
         const auto & X_0_body = this->position();
@@ -83,10 +73,7 @@ sva::ForceVecd RobotFrame::wrench() const
     }();
     return X_fsactual_body.dualMul(sensor_->wrenchWithoutGravity(robot_));
   }
-  else
-  {
-    return position_.dualMul(static_cast<RobotFrame *>(parent_.get())->wrench());
-  }
+  else { return position_.dualMul(static_cast<RobotFrame *>(parent_.get())->wrench()); }
 }
 
 Eigen::Vector2d RobotFrame::cop(double min_pressure) const
@@ -95,10 +82,7 @@ Eigen::Vector2d RobotFrame::cop(double min_pressure) const
   // the rest of the story
   const sva::ForceVecd w_surf = wrench();
   const double pressure = w_surf.force()(2);
-  if(pressure < min_pressure)
-  {
-    return Eigen::Vector2d::Zero();
-  }
+  if(pressure < min_pressure) { return Eigen::Vector2d::Zero(); }
   const Eigen::Vector3d & tau_surf = w_surf.couple();
   return Eigen::Vector2d(-tau_surf(1) / pressure, +tau_surf(0) / pressure);
 }
@@ -118,11 +102,13 @@ RobotFramePtr RobotFrame::makeFrame(const std::string & name, const sva::PTransf
 
 sva::PTransformd RobotFrame::X_b_f() const noexcept
 {
-  if(parent_)
-  {
-    return position_ * static_cast<RobotFrame *>(parent_.get())->X_b_f();
-  }
+  if(parent_) { return position_ * static_cast<RobotFrame *>(parent_.get())->X_b_f(); }
   return position_;
+}
+
+void RobotFrame::init_tvm_frame() const
+{
+  tvm_frame_.reset(new mc_tvm::RobotFrame(mc_tvm::RobotFrame::NewRobotFrameToken{}, *this));
 }
 
 } // namespace mc_rbdyn

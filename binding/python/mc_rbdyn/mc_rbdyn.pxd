@@ -2,7 +2,7 @@
 # Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
 #
 
-cimport c_mc_rbdyn
+cimport mc_rbdyn.c_mc_rbdyn as c_mc_rbdyn
 from libcpp.vector cimport vector
 from libcpp cimport bool as cppbool
 
@@ -19,10 +19,8 @@ cdef class Collision(object):
 cdef Collision CollisionFromC(const c_mc_rbdyn.Collision&)
 
 cdef class BodySensor(object):
-  cdef cppbool __own_impl
-  cdef c_mc_rbdyn.BodySensor * impl
-
-cdef BodySensor BodySensorFromRef(c_mc_rbdyn.BodySensor&)
+  cdef cppbool own_impl__
+  cdef const c_mc_rbdyn.BodySensor * impl
 
 cdef BodySensor BodySensorFromCRef(const c_mc_rbdyn.BodySensor&)
 
@@ -32,10 +30,8 @@ cdef class Flexibility(object):
 cdef Flexibility FlexibilityFromC(const c_mc_rbdyn.Flexibility&)
 
 cdef class ForceSensor(object):
-  cdef cppbool __own_impl
-  cdef c_mc_rbdyn.ForceSensor  * impl
-
-cdef ForceSensor ForceSensorFromRef(c_mc_rbdyn.ForceSensor&)
+  cdef cppbool own_impl__
+  cdef const c_mc_rbdyn.ForceSensor  * impl
 
 cdef ForceSensor ForceSensorFromCRef(const c_mc_rbdyn.ForceSensor&)
 
@@ -94,13 +90,13 @@ cdef CylindricalSurface CylindricalSurfaceFromPtr(c_mc_rbdyn.CylindricalSurface*
 
 cdef class Contact(object):
   cdef c_mc_rbdyn.Contact * impl
-  cdef cppbool __own_impl
+  cdef cppbool own_impl__
 
 cdef Contact ContactFromC(const c_mc_rbdyn.Contact &, cppbool copy=?)
 
 cdef class ContactVector(object):
   cdef vector[c_mc_rbdyn.Contact] * v
-  cdef cppbool __own_impl
+  cdef cppbool own_impl__
 
 cdef ContactVector ContactVectorFromC(const vector[c_mc_rbdyn.Contact] &, cppbool copy=?)
 
@@ -111,4 +107,4 @@ cdef GeosGeomGeometry GeosGeomGeometryFromSharedPtr(shared_ptr[c_mc_rbdyn.Geomet
 
 cdef class PolygonInterpolator(object):
   cdef c_mc_rbdyn.PolygonInterpolator * impl
-  cdef cppbool __own_impl
+  cdef cppbool own_impl__

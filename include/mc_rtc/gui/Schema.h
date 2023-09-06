@@ -6,10 +6,10 @@
 
 #include <mc_rtc/gui/elements.h>
 
-namespace mc_rtc
+namespace mc_rtc::gui
 {
 
-namespace gui
+namespace details
 {
 
 /** Should display a form using the data provided in the configured schema folder
@@ -29,10 +29,7 @@ struct SchemaImpl : public CallbackElement<Element, Callback>
   {
   }
 
-  static constexpr size_t write_size()
-  {
-    return CallbackElement<Element, Callback>::write_size() + 1;
-  }
+  static constexpr size_t write_size() { return CallbackElement<Element, Callback>::write_size() + 1; }
 
   void write(mc_rtc::MessagePackBuilder & builder)
   {
@@ -44,13 +41,13 @@ private:
   std::string schema_;
 };
 
+} // namespace details
+
 /** Helper function to create a Schema element */
 template<typename Callback>
-SchemaImpl<Callback> Schema(const std::string & name, const std::string & schema, Callback cb)
+auto Schema(const std::string & name, const std::string & schema, Callback cb)
 {
-  return SchemaImpl<Callback>(name, schema, cb);
+  return details::SchemaImpl(name, schema, cb);
 }
 
-} // namespace gui
-
-} // namespace mc_rtc
+} // namespace mc_rtc::gui

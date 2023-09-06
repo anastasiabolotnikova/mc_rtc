@@ -1,26 +1,63 @@
 /*
- * Copyright 2015-2020 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #pragma once
 
+#include <mc_rbdyn/RobotData.h>
 #include <mc_rbdyn/RobotFrame.h>
 #include <mc_rbdyn/RobotModule.h>
 #include <mc_rbdyn/Surface.h>
 
 #include <mc_control/generic_gripper.h>
 
+#include <mc_tvm/fwd.h>
+
 #include <RBDyn/MultiBody.h>
 #include <RBDyn/MultiBodyConfig.h>
 #include <RBDyn/MultiBodyGraph.h>
 
 #include <memory>
+#include <optional>
 #include <unordered_map>
 
 namespace mc_rbdyn
 {
 
 struct Robots;
+
+struct Robot;
+
+/** Optional parameters when loading a robot */
+struct LoadRobotParameters
+{
+  friend struct Robot;
+
+private:
+  /** Initial transformation betwen the base and the world */
+  std::optional<sva::PTransformd> base_tf_ = std::nullopt;
+  /** Use this body as the base instead of the RobotModule provided one */
+  std::optional<std::string> base_ = std::nullopt;
+  /** If true, print warning messages for missing files */
+  bool warn_on_missing_files_ = false;
+  /** If provided, this is used as RobotData for the given robot, otherwise a new RobotData is created */
+  RobotDataPtr data_ = nullptr;
+
+public:
+#define MAKE_LOAD_ROBOT_PARAMETER_SETTER(T, NAME)     \
+  inline LoadRobotParameters & NAME(T value) noexcept \
+  {                                                   \
+    NAME##_ = value;                                  \
+    return *this;                                     \
+  }
+
+  MAKE_LOAD_ROBOT_PARAMETER_SETTER(const sva::PTransformd &, base_tf)
+  MAKE_LOAD_ROBOT_PARAMETER_SETTER(std::string_view, base)
+  MAKE_LOAD_ROBOT_PARAMETER_SETTER(bool, warn_on_missing_files)
+  MAKE_LOAD_ROBOT_PARAMETER_SETTER(RobotDataPtr, data)
+
+#undef MAKE_LOAD_ROBOT_PARAMETER_SETTER
+};
 
 struct MC_RBDYN_DLLAPI Robot
 {
@@ -31,8 +68,10 @@ public:
   using convex_pair_t = std::pair<std::string, S_ObjectPtr>;
 
 public:
-  Robot(Robot &&) = default;
-  Robot & operator=(Robot &&) = default;
+  Robot(Robot &&);
+  Robot & operator=(Robot &&);
+
+  ~Robot();
 
   /** Returns the name of the robot
    *
@@ -51,30 +90,28 @@ public:
    * @{
    */
 
-  /** Return the first BodySensor in the robot
-   *
-   * If the robot does not have body sensors, it returns a default
-   * (invalid) one
-   *
-   */
-  BodySensor & bodySensor();
-
   /** Return the first BodySensor in the robot (const) */
-  const BodySensor & bodySensor() const;
+  inline const BodySensor & bodySensor() const noexcept { return data_->bodySensors[0]; }
 
   /** Return true if the robot has a body sensor named name
    *
    * @param name Name of the body sensor
    *
    */
-  bool hasBodySensor(const std::string & name) const;
+  inline bool hasBodySensor(const std::string & name) const noexcept
+  {
+    return data_->bodySensorsIndex.count(name) != 0;
+  }
 
   /** Return true if the specified body has a body sensor attached to it
    *
    * @param body Body to query
    *
    */
-  bool bodyHasBodySensor(const std::string & body) const;
+  inline bool bodyHasBodySensor(const std::string & body) const noexcept
+  {
+    return data_->bodyBodySensors.count(body) != 0;
+  }
 
   /** Return a specific BobySensor by name
    *
@@ -83,9 +120,6 @@ public:
    * @throws If the sensor does not exist
    *
    */
-  BodySensor & bodySensor(const std::string & name);
-
-  /** Return a specific BodySensor by name (const) */
   const BodySensor & bodySensor(const std::string & name) const;
 
   /** Return a specific BodySensor by body name
@@ -95,16 +129,10 @@ public:
    * @throws If there is no sensor attached to the body
    *
    */
-  BodySensor & bodyBodySensor(const std::string & name);
-
-  /** Return a specific BodySensor by body name (const) */
   const BodySensor & bodyBodySensor(const std::string & name) const;
 
-  /** Return all body sensors */
-  BodySensorVector & bodySensors();
-
   /** Return all body sensors (const) */
-  const BodySensorVector & bodySensors() const;
+  inline const BodySensorVector & bodySensors() const noexcept { return data_->bodySensors; }
 
   /** @} */
   /* End of Body sensors group */
@@ -114,7 +142,10 @@ public:
    * @param joint Joint to query
    *
    */
-  bool jointHasJointSensor(const std::string & joint) const;
+  inline bool jointHasJointSensor(const std::string & joint) const noexcept
+  {
+    return data()->jointJointSensors.count(joint) != 0;
+  }
 
   /** Return a specific JointSensor by joint name
    *
@@ -123,16 +154,10 @@ public:
    * @throws If there is no sensor attached to the joint
    *
    */
-  JointSensor & jointJointSensor(const std::string & joint);
-
-  /** Return a specific JointSensor by joint name (const) */
   const JointSensor & jointJointSensor(const std::string & joint) const;
 
-  /** Return all joint sensors */
-  std::vector<JointSensor> & jointSensors();
-
   /** Return all joint sensors (const) */
-  const std::vector<JointSensor> & jointSensors() const;
+  inline const std::vector<JointSensor> & jointSensors() const noexcept { return data_->jointSensors; }
 
   /** @} */
   /* End of Joint sensors group */
@@ -144,10 +169,7 @@ public:
   bool hasBody(const std::string & name) const;
 
   /** Returns true if the robot has a frame named \p name */
-  inline bool hasFrame(const std::string & name) const noexcept
-  {
-    return frames_.count(name) != 0;
-  }
+  inline bool hasFrame(const std::string & name) const noexcept { return frames_.count(name) != 0; }
 
   /** Access the frame named \p name
    *
@@ -156,10 +178,7 @@ public:
   inline const RobotFrame & frame(const std::string & name) const
   {
     auto it = frames_.find(name);
-    if(it != frames_.end())
-    {
-      return *it->second;
-    }
+    if(it != frames_.end()) { return *it->second; }
     mc_rtc::log::error_and_throw("No frame named {} in {}", name, name_);
   }
 
@@ -190,6 +209,29 @@ public:
    * \throws If \p parent does not belong to this robot or if \p name already exists in this robot
    */
   RobotFrame & makeFrame(const std::string & name, RobotFrame & parent, sva::PTransformd X_p_f, bool baked = false);
+
+  /** Create a new temporary frame
+   *
+   * The frame is not kept by the robot and cannot be found via \ref frame or inside \ref frames
+   *
+   * The main purpose is to tie a frame lifetime to another object (e.g. a task, a constraint, a state...) that needs it
+   *
+   * \param name Name of the frame
+   *
+   * \param frame Parent frame of this frame
+   *
+   * \param X_p_f Transformation from the parent frame to the frame
+   *
+   * \param baked Attach the newly created frame to \p parent parent's body rather than \p parent if true
+   *
+   * \returns The newly created frame
+   *
+   * \throws If \p parent does not belong to this robot
+   */
+  RobotFramePtr makeTemporaryFrame(const std::string & name,
+                                   const RobotFrame & parent,
+                                   sva::PTransformd X_p_f,
+                                   bool baked = false) const;
 
   /**
    * Create new frames attached to this robot
@@ -249,6 +291,8 @@ public:
   const std::vector<std::vector<double>> & alphaD() const;
   /** Equivalent to robot.mbc().jointTorque (const) */
   const std::vector<std::vector<double>> & jointTorque() const;
+  /** Access the desired control torque */
+  inline const std::vector<std::vector<double>> & controlTorque() const noexcept { return jointTorque(); }
   /** Equivalent to robot.mbc().bodyPosW (const) */
   const std::vector<sva::PTransformd> & bodyPosW() const;
   /** Equivalent to robot.mbc().bodyVelW (const) */
@@ -265,6 +309,8 @@ public:
   std::vector<std::vector<double>> & alphaD();
   /** Equivalent to robot.mbc().jointTorque */
   std::vector<std::vector<double>> & jointTorque();
+  /** Access the desired control torque */
+  inline std::vector<std::vector<double>> & controlTorque() noexcept { return jointTorque(); }
   /** Equivalent to robot.mbc().bodyPosW */
   std::vector<sva::PTransformd> & bodyPosW();
   /** Equivalent to robot.mbc().bodyVelW */
@@ -580,7 +626,7 @@ public:
   const Eigen::Vector3d & zmpTarget() const;
 
   /** Compute and returns the mass of the robot */
-  double mass() const;
+  inline double mass() const noexcept { return mass_; }
 
   /** @name Joint sensors
    *
@@ -590,31 +636,16 @@ public:
    */
 
   /** Return the encoder values */
-  const std::vector<double> & encoderValues() const;
-
-  /** Set the encoder values */
-  void encoderValues(const std::vector<double> & encoderValues);
+  inline const std::vector<double> & encoderValues() const noexcept { return data_->encoderValues; }
 
   /** Return the encoder velocities */
-  const std::vector<double> & encoderVelocities() const;
-
-  /** Set the encoder velocities */
-  void encoderVelocities(const std::vector<double> & encoderVelocities);
-
-  /** Return the flexibilities values */
-  const std::vector<double> & flexibilityValues() const;
-
-  /** Set the flexibilities values */
-  void flexibilityValues(const std::vector<double> & flexibilityValues);
+  inline const std::vector<double> & encoderVelocities() const noexcept { return data_->encoderVelocities; }
 
   /** Return the joint torques from sensors */
-  const std::vector<double> & jointTorques() const;
-
-  /** Set joint torques from sensors */
-  void jointTorques(const std::vector<double> & jointTorques);
+  inline const std::vector<double> & jointTorques() const noexcept { return data_->jointTorques; }
 
   /** Return the reference joint order for this robot */
-  const std::vector<std::string> & refJointOrder() const;
+  inline const std::vector<std::string> & refJointOrder() const { return data_->refJointOrder; }
 
   /** @} */
   /* End Joints sensors section */
@@ -632,7 +663,10 @@ public:
    *
    * @returns True if the sensor exists, false otherwise
    */
-  bool hasForceSensor(const std::string & name) const;
+  inline bool hasForceSensor(const std::string & name) const noexcept
+  {
+    return data_->forceSensorsIndex.count(name) != 0;
+  }
 
   /** Check if the body has a force sensor directly attached to it
    *
@@ -644,7 +678,7 @@ public:
    * @returns True if the body has a force sensor attached to it, false
    * otherwise
    */
-  bool bodyHasForceSensor(const std::string & body) const;
+  inline bool bodyHasForceSensor(const std::string & body) const noexcept { return bodyForceSensors_.count(body) != 0; }
 
   /**
    * @brief Checks if the surface has a force sensor directly attached to it
@@ -654,10 +688,15 @@ public:
    * @see surfaceHasIndirectForceSensor(const std::string &) if you wish to check whether a
    * sensor is indirectly attached to a body
    *
+   * @throws If \p surface does not exist in this robot
+   *
    * @return True if the surface has a force sensor attached to it, false
    * otherwise
    */
-  bool surfaceHasForceSensor(const std::string & surface) const;
+  inline bool surfaceHasForceSensor(const std::string & surface) const
+  {
+    return bodyHasForceSensor(this->surface(surface).bodyName());
+  }
 
   /** Check if the body has a force sensor attached to it (directly or
    * indirectly)
@@ -668,7 +707,10 @@ public:
    * @returns True if the body has a force sensor attached to it, false
    * otherwise
    */
-  bool bodyHasIndirectForceSensor(const std::string & body) const;
+  inline bool bodyHasIndirectForceSensor(const std::string & body) const
+  {
+    return bodyHasForceSensor(body) || findIndirectForceSensorBodyName(body).size() != 0;
+  }
 
   /** Check if the surface has a force sensor attached to it (directly or
    * indirectly)
@@ -678,7 +720,10 @@ public:
    * @returns True if the surface has a force sensor attached to it, false
    * otherwise
    */
-  bool surfaceHasIndirectForceSensor(const std::string & surface) const;
+  inline bool surfaceHasIndirectForceSensor(const std::string & surface) const
+  {
+    return bodyHasIndirectForceSensor(this->surface(surface).bodyName());
+  }
 
   /** Return a force sensor by name
    *
@@ -689,9 +734,6 @@ public:
    * @throws If no sensor with this name exists
    *
    */
-  ForceSensor & forceSensor(const std::string & name);
-
-  /** Const variant */
   const ForceSensor & forceSensor(const std::string & name) const;
 
   /** Return a force sensor attached to the provided body
@@ -705,9 +747,6 @@ public:
    * @see ForceSensor & indirectBodyForceSensor(const std::string & body);
    * To get a sensor directly or indirectly attached to the body.
    */
-  ForceSensor & bodyForceSensor(const std::string & body);
-
-  /** Const variant */
   const ForceSensor & bodyForceSensor(const std::string & body) const;
 
   /** Return a force sensor attached (directly or indirectly) to the given body
@@ -727,8 +766,6 @@ public:
    * @see ForceSensor & indirectBodyForceSensor(const std::string & surface);
    * To get a sensor directly or indirectly attached to the surface.
    */
-  ForceSensor & surfaceForceSensor(const std::string & surfaceName);
-  /** Const variant */
   const ForceSensor & surfaceForceSensor(const std::string & surfaceName) const;
 
   /**
@@ -741,9 +778,6 @@ public:
    *
    * @throws If no sensor is found between the body and the root
    */
-  ForceSensor & indirectBodyForceSensor(const std::string & body);
-
-  /** Const variant */
   const ForceSensor & indirectBodyForceSensor(const std::string & body) const;
 
   /**
@@ -758,16 +792,10 @@ public:
    *
    * @throws If no sensor is found between the surface and the root
    */
-  ForceSensor & indirectSurfaceForceSensor(const std::string & surface);
-
-  /** Const variant */
   const ForceSensor & indirectSurfaceForceSensor(const std::string & surface) const;
 
   /** Returns all force sensors (const) */
-  const std::vector<ForceSensor> & forceSensors() const;
-
-  /** Returns all force sensors (const) */
-  std::vector<ForceSensor> & forceSensors();
+  inline const std::vector<ForceSensor> & forceSensors() const noexcept { return data_->forceSensors; }
 
   /** @} */
   /* End of Force sensors group */
@@ -787,11 +815,11 @@ public:
    *
    */
   template<typename T>
-  bool hasDevice(const std::string & name) const;
+  bool hasDevice(const std::string & name) const noexcept;
 
   /** Alias for \see hasDevice */
   template<typename T>
-  inline bool hasSensor(const std::string & name) const
+  inline bool hasSensor(const std::string & name) const noexcept
   {
     return hasDevice<T>(name);
   }
@@ -818,10 +846,7 @@ public:
   }
 
   /** Get all devices attached to a robot */
-  inline const DevicePtrVector & devices() const noexcept
-  {
-    return devices_;
-  }
+  inline const DevicePtrVector & devices() const noexcept { return data_->devices; }
 
   /** Alias for \see device */
   template<typename T>
@@ -841,10 +866,7 @@ public:
   void addDevice(DevicePtr device);
 
   /** Alias for \see addDevice */
-  inline void addSensor(SensorPtr sensor)
-  {
-    addDevice(std::move(sensor));
-  }
+  inline void addSensor(SensorPtr sensor) { addDevice(std::move(sensor)); }
 
   /** @} */
   /* End of Devices group */
@@ -954,16 +976,10 @@ public:
   std::map<std::string, std::vector<double>> stance() const;
 
   /** Access Robots instance this instance belongs to */
-  inline mc_rbdyn::Robots & robots() noexcept
-  {
-    return *robots_;
-  }
+  inline mc_rbdyn::Robots & robots() noexcept { return *robots_; }
 
   /** Access Robots instance this instance belongs to (const) */
-  inline const mc_rbdyn::Robots & robots() const noexcept
-  {
-    return *robots_;
-  }
+  inline const mc_rbdyn::Robots & robots() const noexcept { return *robots_; }
 
   /** Access the robot's index in robots() */
   unsigned int robotIndex() const;
@@ -1047,16 +1063,34 @@ public:
   /** Checks whether a gripper is part of this robot */
   bool hasGripper(const std::string & gripper) const;
 
-  inline const std::unordered_map<std::string, mc_control::GripperPtr> & grippersByName() const
+  inline const std::unordered_map<std::string, mc_control::GripperPtr> & grippersByName() const noexcept
   {
-    return grippers_;
+    return data_->grippers;
   }
 
   /** Access all grippers */
-  inline const std::vector<mc_control::GripperRef> & grippers() const
-  {
-    return grippersRef_;
-  }
+  inline const std::vector<mc_control::GripperRef> & grippers() const noexcept { return data_->grippersRef; }
+
+  /** Access the data associated to this object */
+  inline const RobotDataPtr data() const noexcept { return data_; }
+
+  /** Get the TVM robot associated to this robot
+   *
+   * FIXME Returns a non-const reference from a const method because it is most often used to register dependencies
+   * between TVM nodes which require non-const objects
+   */
+  mc_tvm::Robot & tvmRobot() const;
+
+  /** Get the TVM convex associated to this robot convex
+   *
+   * FIXME Returns a non-const reference from a const method because it is most often used to register dependencies
+   * between TVM nodes which require non-const objects
+   *
+   * \param name Name of the convex
+   *
+   * \throws If the convex does not exist
+   */
+  mc_tvm::Convex & tvmConvex(const std::string & name) const;
 
 private:
   Robots * robots_;
@@ -1079,49 +1113,22 @@ private:
   std::map<std::string, convex_pair_t> convexes_;
   std::map<std::string, sva::PTransformd> collisionTransforms_;
   std::map<std::string, mc_rbdyn::SurfacePtr> surfaces_;
-  std::vector<ForceSensor> forceSensors_;
   std::map<std::string, std::vector<double>> stance_;
-  /** Reference joint order see mc_rbdyn::RobotModule */
-  std::vector<std::string> refJointOrder_;
+  /** Data (optionally) shared with other instances of a similar robot */
+  RobotDataPtr data_;
   /** Correspondance between refJointOrder (actuated joints) index and
    * mbc index. **/
   std::vector<int> refJointIndexToMBCIndex_;
-  /** Encoder values provided by the low-level controller */
-  std::vector<double> encoderValues_;
-  /** Encoder velocities provided by the low-level controller or estimated from
-   * encoder values **/
-  std::vector<double> encoderVelocities_;
-  /** Joint torques provided by the low-level controller */
-  std::vector<double> jointTorques_;
-  std::vector<double> flexibilityValues_;
-  /** Hold all body sensors */
-  BodySensorVector bodySensors_;
-  /** Correspondance between body sensor's name and body sensor index*/
-  std::unordered_map<std::string, size_t> bodySensorsIndex_;
-  /** Correspondance between bodies' names and attached body sensors */
-  std::unordered_map<std::string, size_t> bodyBodySensors_;
-  /** Hold all joint sensors */
-  std::vector<JointSensor> jointSensors_;
-  /** Correspondance between joints' names and attached joint sensors */
-  std::unordered_map<std::string, size_t> jointJointSensors_;
+  /** Springs in this instance */
   Springs springs_;
-  std::vector<std::vector<Eigen::VectorXd>> tlPoly_;
-  std::vector<std::vector<Eigen::VectorXd>> tuPoly_;
+  /** Flexibility in this instance */
   std::vector<Flexibility> flexibility_;
-  /** Correspondance between force sensor's name and force sensor index */
-  std::unordered_map<std::string, size_t> forceSensorsIndex_;
   /** Correspondance between bodies' names and attached force sensors */
   std::map<std::string, size_t> bodyForceSensors_;
-  /** Grippers attached to this robot */
-  std::unordered_map<std::string, mc_control::GripperPtr> grippers_;
-  /** Grippers reference for this robot */
-  std::vector<mc_control::GripperRef> grippersRef_;
-  /** Hold all devices that are neither force sensors nor body sensors */
-  DevicePtrVector devices_;
-  /** Correspondance between a device's name and a device index */
-  std::unordered_map<std::string, size_t> devicesIndex_;
   /** Frames in this robot */
   std::unordered_map<std::string, RobotFramePtr> frames_;
+  /** Mass of this robot */
+  double mass_ = 0.0;
 
 protected:
   struct NewRobotToken
@@ -1140,8 +1147,7 @@ public:
         Robots & robots,
         unsigned int robots_idx,
         bool loadFiles,
-        const sva::PTransformd * base = nullptr,
-        const std::string & baseName = "");
+        const LoadRobotParameters & params = {});
 
 protected:
   /** Copy loaded data from this robot to a new robot **/
@@ -1181,12 +1187,21 @@ private:
   Robot(const Robot &) = delete;
   Robot & operator=(const Robot &) = delete;
 
+  /* mutable to allow initialization in const method */
+  mutable mc_tvm::RobotPtr tvm_robot_;
+
+  /* mutable to allow initialization in const method */
+  mutable std::map<std::string, mc_tvm::ConvexPtr> tvm_convexes_;
+
   /** Set the name of the robot
    *
    * \note It is not recommended to call this late in the life cycle of the
    * Robot object as the change is not communicated in any way.
    */
   void name(const std::string & n);
+
+  /** Parameters passed at creation time */
+  LoadRobotParameters load_params_;
 };
 
 /** @defgroup robotFromConfig Helpers to obtain robot index/name from configuration

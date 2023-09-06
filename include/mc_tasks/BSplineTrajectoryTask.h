@@ -1,10 +1,11 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #pragma once
 
 #include <mc_tasks/SplineTrajectoryTask.h>
+
 #include <mc_trajectory/BSpline.h>
 
 namespace mc_tasks
@@ -75,18 +76,12 @@ public:
    *
    * \returns The spline
    */
-  const mc_trajectory::BSpline & spline() const
-  {
-    return bspline;
-  };
+  const mc_trajectory::BSpline & spline() const { return bspline; };
   /*! \brief accessor to the underlying spline (used by SplineTrajectoryTask)
    *
    * \returns The spline
    */
-  mc_trajectory::BSpline & spline()
-  {
-    return bspline;
-  };
+  mc_trajectory::BSpline & spline() { return bspline; };
 
   /*! \brief Add interactive GUI elements to control the curve waypoints
    */

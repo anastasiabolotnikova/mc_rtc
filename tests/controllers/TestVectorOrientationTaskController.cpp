@@ -21,7 +21,8 @@ namespace mc_control
 struct MC_CONTROL_DLLAPI TestVectorOrientationTaskController : public MCController
 {
 public:
-  TestVectorOrientationTaskController(mc_rbdyn::RobotModulePtr rm, double dt) : MCController(rm, dt)
+  TestVectorOrientationTaskController(mc_rbdyn::RobotModulePtr rm, double dt, Backend backend)
+  : MCController(rm, dt, backend)
   {
     // Check that the default constructor loads the robot + ground environment
     BOOST_CHECK_EQUAL(robots().size(), 2);
@@ -46,16 +47,10 @@ public:
   virtual bool run() override
   {
     bool ret = MCController::run();
-    if(!ret)
-    {
-      mc_rtc::log::critical("Failed at iter: {}", nrIter);
-    }
+    if(!ret) { mc_rtc::log::critical("Failed at iter: {}", nrIter); }
     BOOST_CHECK(ret);
     nrIter++;
-    if(nrIter == 500)
-    {
-      voTask->stiffness(100);
-    }
+    if(nrIter == 500) { voTask->stiffness(100); }
     if(nrIter == 1000)
     {
       /* Check that the task is "finished" */
@@ -68,10 +63,7 @@ public:
       voTask->stiffness(10.0);
       solver().addTask(voTask);
     }
-    if(nrIter == 1500)
-    {
-      voTask->stiffness(100);
-    }
+    if(nrIter == 1500) { voTask->stiffness(100); }
     if(nrIter == 2000)
     {
       BOOST_CHECK_SMALL(voTask->eval().norm(), 0.02);
@@ -95,4 +87,8 @@ private:
 } // namespace mc_control
 
 using Controller = mc_control::TestVectorOrientationTaskController;
-SIMPLE_CONTROLLER_CONSTRUCTOR("TestVectorOrientationTaskController", Controller)
+using Backend = mc_control::MCController::Backend;
+MULTI_CONTROLLERS_CONSTRUCTOR("TestVectorOrientationTaskController",
+                              Controller(rm, dt, Backend::Tasks),
+                              "TestVectorOrientationTaskController_TVM",
+                              Controller(rm, dt, Backend::TVM))

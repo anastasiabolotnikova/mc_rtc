@@ -25,14 +25,23 @@ cdef extern from "<memory>" namespace "std" nogil:
   cdef cppclass shared_ptr[T]:
     shared_ptr(T*)
     T* get()
+  cdef cppclass unique_ptr[T]:
+    unique_ptr(T*)
+    T* get()
+
+cdef extern from "<optional>" namespace "std" nogil:
+  cdef cppclass optional[T]:
+    cppbool has_value()
+    T& value()
+    optional& operator=(T&)
 
 cdef extern from "<mc_control/Contact.h>" namespace "mc_control":
   cdef cppclass Contact:
     Contact()
     Contact(const string&, const string&, const string&, const string&, double)
     Contact(const string&, const string&, const string&, const string&, double, const Vector6d)
-    string r1
-    string r2
+    optional[string] r1
+    optional[string] r2
     string r1Surface
     string r2Surface
     double friction
@@ -66,10 +75,10 @@ cdef extern from "<mc_control/mc_controller.h>" namespace "mc_control":
     shared_ptr[c_mc_rtc_gui.StateBuilder] gui()
 
     double timeStep
-    ContactConstraint contactConstraint
-    DynamicsConstraint dynamicsConstraint
-    KinematicsConstraint kinematicsConstraint
-    CollisionsConstraint selfCollisionConstraint
+    unique_ptr[ContactConstraint] contactConstraint
+    unique_ptr[DynamicsConstraint] dynamicsConstraint
+    unique_ptr[KinematicsConstraint] kinematicsConstraint
+    unique_ptr[CollisionsConstraint] selfCollisionConstraint
     shared_ptr[c_mc_tasks.PostureTask] postureTask
     QPSolver & solver()
 
@@ -124,7 +133,6 @@ cdef extern from "<mc_control/mc_global_controller.h>" namespace "mc_control":
     void setSensorLinearAcceleration(Vector3d)
     void setEncoderValues(vector[double])
     void setEncoderVelocities(vector[double])
-    void setFlexibilityValues(vector[double])
     void setJointTorques(vector[double])
     void setWrenches(cppmap[string, ForceVecd])
 
@@ -148,3 +156,15 @@ cdef extern from "mc_control_wrapper.hpp" namespace "mc_control":
 
   void add_anchor_frame_callback[T, U](MCPythonController &, const string &, T, U)
   void remove_anchor_frame_callback(MCPythonController &, const string &)
+
+cdef extern from "<mc_control/ControllerClient.h>" namespace "mc_control":
+  cdef cppclass ElementId:
+    ElementId()
+    ElementId(const vector[string]&, const string&)
+    vector[string] category
+    string name
+  cdef cppclass ControllerClient:
+    ControllerClient()
+    ControllerClient(const string&, const string&, double)
+    void send_request(const ElementId&)
+    void send_request(const ElementId&, c_mc_rtc.Configuration)

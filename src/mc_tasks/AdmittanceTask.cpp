@@ -9,7 +9,9 @@
 #include <mc_rbdyn/configuration_io.h>
 #include <mc_rbdyn/rpy_utils.h>
 
+#include <mc_rtc/gui/ArrayInput.h>
 #include <mc_rtc/gui/ArrayLabel.h>
+#include <mc_rtc/gui/NumberInput.h>
 #include <mc_rtc/gui/Transform.h>
 
 #include <mc_rtc/deprecated.h>
@@ -84,23 +86,14 @@ void AdmittanceTask::reset()
 /*! \brief Load parameters from a Configuration object */
 void AdmittanceTask::load(mc_solver::QPSolver & solver, const mc_rtc::Configuration & config)
 {
-  if(config.has("admittance"))
-  {
-    admittance(config("admittance"));
-  }
+  if(config.has("admittance")) { admittance(config("admittance")); }
   else if(config.has("targetPose"))
   {
     mc_rtc::log::warning("[{}] property \"targetPose\" is deprecated, use \"target\" instead", name());
     targetPose(config("targetPose"));
   }
-  if(config.has("wrench"))
-  {
-    targetWrench(config("wrench"));
-  }
-  if(config.has("refVelB"))
-  {
-    refVelB(config("refVelB"));
-  }
+  if(config.has("wrench")) { targetWrench(config("wrench")); }
+  if(config.has("refVelB")) { refVelB(config("refVelB")); }
   if(config.has("maxVel"))
   {
     sva::MotionVecd maxVel = config("maxVel");
@@ -139,7 +132,7 @@ void AdmittanceTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
       mc_rtc::gui::NumberInput(
           "Velocity filter gain", [this]() { return velFilterGain_; }, [this](double g) { velFilterGain(g); }));
   // Don't add TransformTask as target configuration is different
-  TrajectoryTaskGeneric<tasks::qp::SurfaceTransformTask>::addToGUI(gui);
+  TrajectoryTaskGeneric::addToGUI(gui);
 }
 
 void AdmittanceTask::addToSolver(mc_solver::QPSolver & solver)
@@ -157,8 +150,10 @@ namespace
 
 static auto registered = mc_tasks::MetaTaskLoader::register_load_function(
     "admittance",
-    [](mc_solver::QPSolver & solver, const mc_rtc::Configuration & config) {
-      auto frame = [&]() -> std::string {
+    [](mc_solver::QPSolver & solver, const mc_rtc::Configuration & config)
+    {
+      auto frame = [&]() -> std::string
+      {
         if(config.has("surface"))
         {
           mc_rtc::log::deprecated("AdmittanceTaskLoader", "surface", "frame");

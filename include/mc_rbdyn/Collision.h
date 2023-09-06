@@ -38,10 +38,7 @@ struct MC_RBDYN_DLLAPI Collision
   bool reverse; /** If true, maximum distance constraint is defined (not a collision constraint) */
   std::vector<std::string> r1Joints; /** Selected joints in the first robot (empty = all joints) */
   std::vector<std::string> r2Joints; /** Selected joints in the second robot, ignored if r1 == r2 */
-  inline bool isNone()
-  {
-    return body1 == "NONE" && body2 == "NONE";
-  }
+  inline bool isNone() { return body1 == "NONE" && body2 == "NONE"; }
 
   bool operator==(const Collision & rhs) const;
   bool operator!=(const Collision & rhs) const;

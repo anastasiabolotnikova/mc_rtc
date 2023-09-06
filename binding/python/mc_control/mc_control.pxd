@@ -2,7 +2,7 @@
 # Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
 #
 
-cimport c_mc_control
+cimport mc_control.c_mc_control as c_mc_control
 
 from libcpp cimport bool as cppbool
 
@@ -29,3 +29,9 @@ cdef public api class MCPythonController(MCController)[object MCPythonController
 
 cdef class MCGlobalController(object):
   cdef c_mc_control.MCGlobalController * impl
+
+cdef class ElementId(object):
+  cdef c_mc_control.ElementId impl
+
+cdef class ControllerClient(object):
+  cdef c_mc_control.ControllerClient * impl

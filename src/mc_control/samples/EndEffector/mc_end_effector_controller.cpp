@@ -13,8 +13,9 @@ namespace mc_control
 
 MCEndEffectorController::MCEndEffectorController(std::shared_ptr<mc_rbdyn::RobotModule> robot_module,
                                                  double dt,
-                                                 const mc_rtc::Configuration & config)
-: MCController(robot_module, dt)
+                                                 const mc_rtc::Configuration & config,
+                                                 Backend backend)
+: MCController(robot_module, dt, backend)
 {
   solver().addConstraintSet(contactConstraint);
   solver().addConstraintSet(dynamicsConstraint);
@@ -23,32 +24,22 @@ MCEndEffectorController::MCEndEffectorController(std::shared_ptr<mc_rbdyn::Robot
   solver().addTask(postureTask.get());
   if(robot().hasSurface("LFullSole") && robot().hasSurface("RFullSole"))
   {
-    solver().setContacts(
-        {mc_rbdyn::Contact(robots(), "LFullSole", "AllGround"), mc_rbdyn::Contact(robots(), "RFullSole", "AllGround")});
+    addContact({robot().name(), env().name(), "LFullSole", "AllGround"});
+    addContact({robot().name(), env().name(), "RFullSole", "AllGround"});
   }
   else if(robot().hasSurface("LeftFoot") && robot().hasSurface("RightFoot"))
   {
-    solver().setContacts(
-        {mc_rbdyn::Contact(robots(), "LeftFoot", "AllGround"), mc_rbdyn::Contact(robots(), "RightFoot", "AllGround")});
+    addContact({robot().name(), env().name(), "LeftFoot", "AllGround"});
+    addContact({robot().name(), env().name(), "RightFoot", "AllGround"});
   }
-  else if(robot().mb().joint(0).dof() == 0)
-  {
-    solver().setContacts({});
-  }
-  else
+  else if(robot().mb().joint(0).dof() == 6)
   {
     mc_rtc::log::error_and_throw("EndEffector sample does not support robot {}", robot().name());
   }
 
   std::string body = robot().mb().bodies().back().name();
-  if(robot().hasBody("RARM_LINK7"))
-  {
-    body = "RARM_LINK7";
-  }
-  else if(robot().hasBody("r_wrist"))
-  {
-    body = "r_wrist";
-  }
+  if(robot().hasBody("RARM_LINK7")) { body = "RARM_LINK7"; }
+  else if(robot().hasBody("r_wrist")) { body = "r_wrist"; }
   efTask_ = std::make_shared<mc_tasks::EndEffectorTask>(body, robots(), robots().robotIndex(), 5.0, 200.0);
   solver().addTask(efTask_);
   if(robot().mb().joint(0).dof() != 0)
@@ -72,14 +63,16 @@ void MCEndEffectorController::reset(const ControllerResetData & reset_data)
 {
   MCController::reset(reset_data);
   efTask_->reset();
-  if(comTask_)
-  {
-    comTask_->reset();
-  }
-  for(auto & t : tasks_)
-  {
-    t->reset();
-  }
+  if(comTask_) { comTask_->reset(); }
+  for(auto & t : tasks_) { t->reset(); }
 }
 
 } // namespace mc_control
+
+using Controller = mc_control::MCEndEffectorController;
+using Backend = Controller::Backend;
+
+MULTI_CONTROLLERS_CONSTRUCTOR("EndEffector",
+                              Controller(rm, dt, config, Backend::Tasks),
+                              "EndEffector_TVM",
+                              Controller(rm, dt, config, Backend::TVM))

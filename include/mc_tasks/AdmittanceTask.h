@@ -1,12 +1,12 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #pragma once
 
 #include <mc_filter/utils/clamp.h>
 
-#include <mc_tasks/SurfaceTransformTask.h>
+#include <mc_tasks/TransformTask.h>
 
 namespace mc_tasks
 {
@@ -88,79 +88,49 @@ public:
   /*! \brief Get the admittance coefficients of the task
    *
    */
-  const sva::ForceVecd & admittance() const
-  {
-    return admittance_;
-  }
+  const sva::ForceVecd & admittance() const { return admittance_; }
 
   /*! \brief Set the admittance coefficients of the task
    *
    * \param admittance Vector of positive admittance coefficients
    *
    */
-  void admittance(const sva::ForceVecd & admittance)
-  {
-    admittance_ = admittance;
-  }
+  void admittance(const sva::ForceVecd & admittance) { admittance_ = admittance; }
 
   /*! \brief Get the current pose of the control frame in the inertial frame */
-  sva::PTransformd surfacePose() const
-  {
-    return frame_->position();
-  }
+  sva::PTransformd surfacePose() const { return frame_->position(); }
 
   /*! \brief Get the target pose of the control frame in the world frame. */
-  sva::PTransformd targetPose()
-  {
-    return this->target();
-  }
+  sva::PTransformd targetPose() { return this->target(); }
 
   /*! \brief Set target pose (position and orientation) of the frame in the world frame.
    *
    * \param X_0_target Plucker transform to the target frame.
    *
    */
-  void targetPose(const sva::PTransformd & X_0_target)
-  {
-    this->target(X_0_target);
-  }
+  void targetPose(const sva::PTransformd & X_0_target) { this->target(X_0_target); }
 
   /*! \brief Transform from current frame pose to target. */
-  sva::PTransformd poseError()
-  {
-    return targetPose() * surfacePose().inv();
-  }
+  sva::PTransformd poseError() { return targetPose() * surfacePose().inv(); }
 
   /*! \brief Get the target wrench in the control frame */
-  const sva::ForceVecd & targetWrench() const
-  {
-    return targetWrench_;
-  }
+  const sva::ForceVecd & targetWrench() const { return targetWrench_; }
 
   /*! \brief Set the target wrench in world frame.
    *
    * \param wrench Target wrench in world frame
    */
-  void targetWrenchW(const sva::ForceVecd & wrenchW)
-  {
-    targetWrench(frame_->position().dualMul(wrenchW));
-  }
+  void targetWrenchW(const sva::ForceVecd & wrenchW) { targetWrench(frame_->position().dualMul(wrenchW)); }
 
   /*! \brief Set the target wrench in the control frame
    *
    * \param wrench Target wrench in the control frame
    *
    */
-  void targetWrench(const sva::ForceVecd & wrench)
-  {
-    targetWrench_ = wrench;
-  }
+  void targetWrench(const sva::ForceVecd & wrench) { targetWrench_ = wrench; }
 
   /*! \brief Get the measured wrench in the control frame */
-  sva::ForceVecd measuredWrench() const
-  {
-    return frame_->wrench();
-  }
+  sva::ForceVecd measuredWrench() const { return frame_->wrench(); }
 
   /*! \brief Set the maximum translation velocity of the task */
   void maxLinearVel(const Eigen::Vector3d & maxLinearVel)
@@ -175,10 +145,7 @@ public:
   }
 
   /*! Get the maximum linear velocity of the task */
-  const Eigen::Vector3d & maxLinearVel() const noexcept
-  {
-    return maxLinearVel_;
-  }
+  const Eigen::Vector3d & maxLinearVel() const noexcept { return maxLinearVel_; }
 
   /*! \brief Set the maximum angular velocity of the task */
   void maxAngularVel(const Eigen::Vector3d & maxAngularVel)
@@ -193,25 +160,16 @@ public:
   }
 
   /*! Get the maximum angular velocity of the task */
-  const Eigen::Vector3d & maxAngularVel() const noexcept
-  {
-    return maxAngularVel_;
-  }
+  const Eigen::Vector3d & maxAngularVel() const noexcept { return maxAngularVel_; }
 
   /*! \brief Set the gain of the low-pass filter on the reference velocity
    *
    * \param gain Gain between 0 and 1.
    */
-  void velFilterGain(double gain)
-  {
-    velFilterGain_ = mc_filter::utils::clamp(gain, 0, 1);
-  }
+  void velFilterGain(double gain) { velFilterGain_ = mc_filter::utils::clamp(gain, 0, 1); }
 
   /*! \brief Return the gain of the low-pass filter on the reference velocity */
-  double velFilterGain() const noexcept
-  {
-    return velFilterGain_;
-  }
+  double velFilterGain() const noexcept { return velFilterGain_; }
 
   /*! \brief Set the reference body velocity.
    *
@@ -226,10 +184,7 @@ public:
    * control.
    *
    */
-  void refVelB(const sva::MotionVecd & velB)
-  {
-    feedforwardVelB_ = velB;
-  }
+  void refVelB(const sva::MotionVecd & velB) { feedforwardVelB_ = velB; }
 
   /*! \brief Load parameters from a Configuration object */
   void load(mc_solver::QPSolver & solver, const mc_rtc::Configuration & config) override;
@@ -251,10 +206,10 @@ protected:
   void addToLogger(mc_rtc::Logger & logger) override;
 
   /** Transform's refVelB() becomes internal to the task. */
-  using SurfaceTransformTask::refVelB;
+  using TransformTask::refVelB;
 
   /** Surface transform's target becomes internal to the task. Its setter is now targetPose(). */
-  using SurfaceTransformTask::target;
+  using TransformTask::target;
 
   /** Override addToSolver in order to get the timestep's solver automatically
    *

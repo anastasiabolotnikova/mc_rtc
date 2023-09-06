@@ -12,11 +12,6 @@
 namespace mc_tasks
 {
 
-double extraStiffness(double error, double extraStiffness)
-{
-  return exp(-error) * extraStiffness;
-}
-
 MetaTask::~MetaTask() {}
 
 void MetaTask::load(mc_solver::QPSolver & solver, const mc_rtc::Configuration & config)
@@ -31,18 +26,9 @@ void MetaTask::load(mc_solver::QPSolver & solver, const mc_rtc::Configuration & 
     }
     dimWeight(dimW);
   }
-  if(config.has("activeJoints"))
-  {
-    selectActiveJoints(solver, config("activeJoints"));
-  }
-  else if(config.has("unactiveJoints"))
-  {
-    selectUnactiveJoints(solver, config("unactiveJoints"));
-  }
-  if(config.has("name"))
-  {
-    name(config("name"));
-  }
+  if(config.has("activeJoints")) { selectActiveJoints(solver, config("activeJoints")); }
+  else if(config.has("unactiveJoints")) { selectUnactiveJoints(solver, config("unactiveJoints")); }
+  if(config.has("name")) { name(config("name")); }
 }
 
 void MetaTask::addToGUI(mc_rtc::gui::StateBuilder & gui)

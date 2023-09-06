@@ -1,8 +1,15 @@
+/*
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
+ */
+
 #pragma once
+
+#include <mc_solver/ConstraintSet.h>
 
 #include <mc_rbdyn/CompoundJointConstraintDescription.h>
 #include <mc_rbdyn/Robots.h>
-#include <mc_solver/ConstraintSet.h>
+
+#include <mc_rtc/void_ptr.h>
 
 #include <Tasks/QPSolver.h>
 
@@ -42,25 +49,13 @@ struct CompoundJointConstraint : public tasks::qp::ConstraintFunction<tasks::qp:
                                const std::vector<rbd::MultiBodyConfig> & mbcs,
                                const tasks::qp::SolverData & data) override;
 
-  inline const Eigen::MatrixXd & AInEq() const override
-  {
-    return A_;
-  }
+  inline const Eigen::MatrixXd & AInEq() const override { return A_; }
 
-  inline int maxInEq() const override
-  {
-    return static_cast<int>(descs_.size());
-  }
+  inline int maxInEq() const override { return static_cast<int>(descs_.size()); }
 
-  inline std::string nameInEq() const override
-  {
-    return name_;
-  }
+  inline std::string nameInEq() const override { return name_; }
 
-  inline const Eigen::VectorXd & bInEq() const override
-  {
-    return b_;
-  }
+  inline const Eigen::VectorXd & bInEq() const override { return b_; }
 
   std::string descInEq(const std::vector<rbd::MultiBody> & mbs, int i) override;
 
@@ -98,7 +93,7 @@ private:
 
 } // namespace details
 
-/** Wrapper for mc_solver::details::CompundJointConstraint */
+/** Adds a compound joint constraint for a given robot */
 struct MC_SOLVER_DLLAPI CompoundJointConstraint : public ConstraintSet
 {
   CompoundJointConstraint(const mc_rbdyn::Robots & robots, unsigned int robotIndex, double dt);
@@ -108,12 +103,20 @@ struct MC_SOLVER_DLLAPI CompoundJointConstraint : public ConstraintSet
                           double dt,
                           const CompoundJointConstraintDescriptionVector & cs);
 
-  void addToSolver(const std::vector<rbd::MultiBody> & mbs, tasks::qp::QPSolver & solver) override;
+  void addToSolverImpl(QPSolver & solver) override;
 
-  void removeFromSolver(tasks::qp::QPSolver & solver) override;
+  void removeFromSolverImpl(QPSolver & solver) override;
 
 private:
-  details::CompoundJointConstraint constr_;
+  /** Holds the constraint implementation
+   *
+   * In Tasks backend:
+   * - details::CompoundJointConstraint
+   *
+   * In TVM backend:
+   * - details::TVMCompoundJointConstraint
+   */
+  mc_rtc::void_ptr constraint_;
 };
 
 } // namespace mc_solver

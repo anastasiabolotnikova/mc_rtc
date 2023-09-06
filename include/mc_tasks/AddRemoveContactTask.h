@@ -1,9 +1,8 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
-#ifndef _H_ADDREMOVECONTACTTASK_H_
-#define _H_ADDREMOVECONTACTTASK_H_
+#pragma once
 
 #include <mc_rbdyn/Robots.h>
 #include <mc_solver/BoundedSpeedConstr.h>
@@ -28,6 +27,7 @@ namespace mc_tasks
  * The robot's surface will move along its normal axis. It is the
  * programmer responsibility to stop the task when the desired
  * destination has been reached.
+ *
  */
 struct MC_TASKS_DLLAPI AddRemoveContactTask : public MetaTask
 {
@@ -55,9 +55,9 @@ public:
    * \param userT_0_s If provided, overrides the chosen normal
    * direction
    */
-  AddRemoveContactTask(mc_rbdyn::Robots & robots,
+  AddRemoveContactTask(const mc_rbdyn::Robots & robots,
                        std::shared_ptr<mc_solver::BoundedSpeedConstr> constSpeedConstr,
-                       mc_rbdyn::Contact & contact,
+                       const mc_rbdyn::Contact & contact,
                        double direction,
                        double speed = 0.01,
                        double stiffness = 2,
@@ -83,8 +83,8 @@ public:
    *
    * \param userT_0_s if provided, overrides the chosen normal direction
    */
-  AddRemoveContactTask(mc_solver::QPSolver & solver,
-                       mc_rbdyn::Contact & contact,
+  AddRemoveContactTask(const mc_solver::QPSolver & solver,
+                       const mc_rbdyn::Contact & contact,
                        double direction,
                        double speed = 0.01,
                        double stiffness = 2,
@@ -99,23 +99,14 @@ public:
   void direction(double direction);
 
   /*! \brief Get the desired dislacement speed */
-  double speed()
-  {
-    return speed_;
-  }
+  double speed() { return speed_; }
   /*! \brief Set the desired dislacement speed */
   void speed(double s);
 
   /*! \brief Get the task stiffness */
-  double stiffness()
-  {
-    return stiffness_;
-  }
+  double stiffness() { return stiffness_; }
   /*! \brief Get the task weight */
-  double weight()
-  {
-    return weight_;
-  }
+  double weight() { return weight_; }
 
   /*! \brief Get the velocity error
    *
@@ -131,19 +122,19 @@ public:
   Eigen::VectorXd speed() const override;
 
 public:
-  mc_rbdyn::Robots & robots;
-  mc_rbdyn::Robot & robot;
-  mc_rbdyn::Robot & env;
+  const mc_rbdyn::Robots & robots;
+  unsigned int robotIndex;
+  unsigned int envIndex;
   std::shared_ptr<mc_solver::BoundedSpeedConstr> constSpeedConstr;
 
-  std::shared_ptr<mc_rbdyn::Surface> robotSurf;
+  mc_rbdyn::SurfacePtr robotSurf;
   unsigned int robotBodyIndex;
 
   sva::PTransformd targetTf;
 
   std::string bodyId;
-  Eigen::MatrixXd dofMat;
-  Eigen::VectorXd speedMat;
+  Eigen::Matrix6d dofMat;
+  Eigen::Vector6d speedMat;
   Eigen::Vector3d normal;
 
   double stiffness_;
@@ -151,8 +142,7 @@ public:
   double speed_;
   double direction_;
   Eigen::Vector3d targetSpeed;
-  std::shared_ptr<tasks::qp::LinVelocityTask> linVelTask;
-  std::shared_ptr<tasks::qp::PIDTask> linVelTaskPid;
+  mc_rtc::void_ptr impl_;
   double targetVelWeight;
 
 private:
@@ -238,5 +228,3 @@ public:
 };
 
 } // namespace mc_tasks
-
-#endif

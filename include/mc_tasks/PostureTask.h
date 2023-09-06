@@ -1,17 +1,25 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #pragma once
 
 #include <mc_tasks/MetaTask.h>
 
+#include <mc_rtc/void_ptr.h>
+
 #include <Tasks/QPTasks.h>
 
 namespace mc_tasks
 {
 
-/** A posture task for a given robot */
+/** A posture task for a given robot
+ *
+ * Note that eval/speed/dimWeight have different dimensions based on the backend:
+ * - in Tasks, this is robot.mb().nrParams()
+ * - in TVM, this is robot.tvmRobot().qJoints().size()
+ *
+ */
 struct MC_TASKS_DLLAPI PostureTask : public MetaTask
 {
 public:
@@ -27,15 +35,9 @@ public:
    * For simple cases (using 0/1 as weights) prefer \ref selectActiveJoints or \ref selectUnactiveJoints which are
    * simpler to use
    */
-  inline void dimWeight(const Eigen::VectorXd & dimW) override
-  {
-    pt_.dimWeight(dimW);
-  }
+  void dimWeight(const Eigen::VectorXd & dimW) override;
 
-  Eigen::VectorXd dimWeight() const override
-  {
-    return pt_.dimWeight();
-  }
+  Eigen::VectorXd dimWeight() const override;
 
   /*! \brief Select active joints for this task
    *
@@ -70,33 +72,19 @@ public:
    *
    * \p refVel Should be of size nrDof
    */
-  inline void refVel(const Eigen::VectorXd & refVel) noexcept
-  {
-    assert(refVel.size() == robots_.robot(rIndex_).mb().nrDof());
-    pt_.refVel(refVel);
-  }
+  void refVel(const Eigen::VectorXd & refVel) noexcept;
 
   /** Access the reference velocity */
-  inline const Eigen::VectorXd & refVel() const noexcept
-  {
-    return pt_.refVel();
-  }
+  const Eigen::VectorXd & refVel() const noexcept;
 
   /** Change reference acceleration
    *
    * \p refAccel Should be of size nrDof
    */
-  inline void refAccel(const Eigen::VectorXd & refAccel) noexcept
-  {
-    assert(refAccel.size() == robots_.robot(rIndex_).mb().nrDof());
-    pt_.refAccel(refAccel);
-  }
+  void refAccel(const Eigen::VectorXd & refAccel) noexcept;
 
   /** Access the reference acceleration */
-  inline const Eigen::VectorXd & refAccel() const noexcept
-  {
-    return pt_.refAccel();
-  }
+  const Eigen::VectorXd & refAccel() const noexcept;
 
   /** Get current posture objective */
   std::vector<std::vector<double>> posture() const;
@@ -106,6 +94,9 @@ public:
 
   /** Set joint stiffness for the posture task */
   void jointStiffness(const mc_solver::QPSolver & solver, const std::vector<tasks::qp::JointStiffness> & jss);
+
+  /** Set joint weights for the posture task */
+  void jointWeights(const std::map<std::string, double> & jws);
 
   /** Set specific joint targets
    *
@@ -171,8 +162,15 @@ private:
   /** Robot handled by the task */
   const mc_rbdyn::Robots & robots_;
   unsigned int rIndex_;
-  /** Actual task */
-  tasks::qp::PostureTask pt_;
+  /** Holds the constraint implementation
+   *
+   * In Tasks backend:
+   * - tasks::qp::PostureTask
+   *
+   * In TVM backend:
+   * - details::TVMPostureTask
+   */
+  mc_rtc::void_ptr pt_;
   /** Solver timestep */
   double dt_;
   /** Store the target posture */

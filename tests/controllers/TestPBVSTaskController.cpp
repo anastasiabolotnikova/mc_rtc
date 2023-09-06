@@ -21,7 +21,7 @@ namespace mc_control
 struct MC_CONTROL_DLLAPI TestPBVSTaskController : public MCController
 {
 public:
-  TestPBVSTaskController(mc_rbdyn::RobotModulePtr rm, double dt) : MCController(rm, dt)
+  TestPBVSTaskController(mc_rbdyn::RobotModulePtr rm, double dt, Backend backend) : MCController(rm, dt, backend)
   {
     // Check that the default constructor loads the robot + ground environment
     BOOST_CHECK_EQUAL(robots().size(), 2);
@@ -50,16 +50,10 @@ public:
     auto X_t_s = X_0_s * object_.inv();
     pbvsTask->error(X_t_s);
     bool ret = MCController::run();
-    if(!ret)
-    {
-      mc_rtc::log::critical("Failed at iter: {}", nrIter);
-    }
+    if(!ret) { mc_rtc::log::critical("Failed at iter: {}", nrIter); }
     BOOST_CHECK(ret);
     nrIter++;
-    if(nrIter == 500)
-    {
-      pbvsTask->stiffness(1000);
-    }
+    if(nrIter == 500) { pbvsTask->stiffness(1000); }
     if(nrIter == 1000)
     {
       /* Check that the task is "finished" */
@@ -88,4 +82,8 @@ private:
 } // namespace mc_control
 
 using Controller = mc_control::TestPBVSTaskController;
-SIMPLE_CONTROLLER_CONSTRUCTOR("TestPBVSTaskController", Controller)
+using Backend = mc_control::MCController::Backend;
+MULTI_CONTROLLERS_CONSTRUCTOR("TestPBVSTaskController",
+                              Controller(rm, dt, Backend::Tasks),
+                              "TestPBVSTaskController_TVM",
+                              Controller(rm, dt, Backend::TVM))

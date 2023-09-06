@@ -7,10 +7,10 @@
 #include <mc_rtc/gui/details/traits.h>
 #include <mc_rtc/gui/elements.h>
 
-namespace mc_rtc
+namespace mc_rtc::gui
 {
 
-namespace gui
+namespace details
 {
 
 /** Create a user-defined form
@@ -40,10 +40,7 @@ struct FormImpl : public CallbackElement<Element, Callback>
   {
     count_ += 1;
     using ElementT = typename std::decay<T>::type;
-    if(ElementT::is_dynamic())
-    {
-      addDynamicElement(std::forward<T>(element));
-    }
+    if(ElementT::is_dynamic()) { addDynamicElement(std::forward<T>(element)); }
     else
     {
       std::vector<char> data = data_;
@@ -56,24 +53,15 @@ struct FormImpl : public CallbackElement<Element, Callback>
     }
   }
 
-  static constexpr size_t write_size()
-  {
-    return CallbackElement<Element, Callback>::write_size() + 1;
-  }
+  static constexpr size_t write_size() { return CallbackElement<Element, Callback>::write_size() + 1; }
 
   void write(mc_rtc::MessagePackBuilder & builder)
   {
     CallbackElement<Element, Callback>::write(builder);
     builder.start_array(count_);
-    for(const auto & el : dynamic_elements_)
-    {
-      el(builder);
-    }
+    for(const auto & el : dynamic_elements_) { el(builder); }
     builder.write_object(data_.data(), data_size_);
-    for(size_t i = dynamic_elements_.size() + 1; i < count_; ++i)
-    {
-      builder.write_object(nullptr, 0);
-    }
+    for(size_t i = dynamic_elements_.size() + 1; i < count_; ++i) { builder.write_object(nullptr, 0); }
     builder.finish_array();
   }
 
@@ -90,10 +78,7 @@ private:
   void write_elements(mc_rtc::MessagePackBuilder & builder, Arg && element, Args &&... args)
   {
     using ElementT = typename std::decay<Arg>::type;
-    if(ElementT::is_dynamic())
-    {
-      addDynamicElement(std::forward<Arg>(element));
-    }
+    if(ElementT::is_dynamic()) { addDynamicElement(std::forward<Arg>(element)); }
     else
     {
       builder.start_array(element.write_size());
@@ -106,7 +91,8 @@ private:
   template<typename T>
   void addDynamicElement(T && element)
   {
-    auto callback = [element](mc_rtc::MessagePackBuilder & builder) mutable {
+    auto callback = [element](mc_rtc::MessagePackBuilder & builder) mutable
+    {
       builder.start_array(element.write_size());
       element.write(builder);
       builder.finish_array();
@@ -120,20 +106,16 @@ private:
   size_t data_size_;
 };
 
+} // namespace details
+
 template<typename Derived, Elements element>
 struct FormElement
 {
   static constexpr auto type = element;
 
-  static constexpr size_t write_size()
-  {
-    return 3 + Derived::write_size_();
-  }
+  static constexpr size_t write_size() { return 3 + Derived::write_size_(); }
 
-  static constexpr bool is_dynamic()
-  {
-    return false;
-  }
+  static constexpr bool is_dynamic() { return false; }
 
   void write(mc_rtc::MessagePackBuilder & builder)
   {
@@ -153,7 +135,7 @@ protected:
   bool required_;
 };
 
-namespace internal
+namespace details
 {
 
 /** This helper class avoids forming reference to void arguments */
@@ -164,10 +146,7 @@ struct CallbackOrValue
 
   Callback callback;
 
-  void write(mc_rtc::MessagePackBuilder & builder)
-  {
-    builder.write(callback());
-  }
+  void write(mc_rtc::MessagePackBuilder & builder) { builder.write(callback()); }
 };
 
 template<typename T>
@@ -175,10 +154,7 @@ struct CallbackOrValue<T, void>
 {
   T value;
 
-  void write(mc_rtc::MessagePackBuilder & builder)
-  {
-    builder.write(value);
-  }
+  void write(mc_rtc::MessagePackBuilder & builder) { builder.write(value); }
 };
 
 template<typename T, Elements element, typename DataCallback = void>
@@ -194,15 +170,9 @@ struct FormDataInput : public FormElement<FormDataInput<T, element, DataCallback
     has_def_ = false;
   }
 
-  static constexpr size_t write_size_()
-  {
-    return 2;
-  }
+  static constexpr size_t write_size_() { return 2; }
 
-  static constexpr bool is_dynamic()
-  {
-    return !std::is_same<DataCallback, void>::value;
-  }
+  static constexpr bool is_dynamic() { return !std::is_same<DataCallback, void>::value; }
 
   void write_(mc_rtc::MessagePackBuilder & builder)
   {
@@ -218,24 +188,24 @@ private:
   bool has_def_;
 };
 
-} // namespace internal
+} // namespace details
 
-#define MAKE_DATA_INPUT_HELPER(DATAT, ELEMENT, FNAME)                                                        \
-  inline internal::FormDataInput<DATAT, ELEMENT> FNAME(const std::string & name, bool required)              \
-  {                                                                                                          \
-    return {name, required};                                                                                 \
-  }                                                                                                          \
-                                                                                                             \
-  inline internal::FormDataInput<DATAT, ELEMENT> FNAME(const std::string & name, bool required, DATAT value) \
-  {                                                                                                          \
-    return {name, required, internal::CallbackOrValue<DATAT, void>{value}};                                  \
-  }                                                                                                          \
-                                                                                                             \
-  template<typename Callback, typename std::enable_if<details::is_getter<Callback>(), int>::type = 0>        \
-  inline internal::FormDataInput<DATAT, ELEMENT, Callback> FNAME(const std::string & name, bool required,    \
-                                                                 Callback callback)                          \
-  {                                                                                                          \
-    return {name, required, internal::CallbackOrValue<DATAT, Callback>{callback}};                           \
+#define MAKE_DATA_INPUT_HELPER(DATAT, ELEMENT, FNAME)                                                       \
+  inline details::FormDataInput<DATAT, ELEMENT> FNAME(const std::string & name, bool required)              \
+  {                                                                                                         \
+    return {name, required};                                                                                \
+  }                                                                                                         \
+                                                                                                            \
+  inline details::FormDataInput<DATAT, ELEMENT> FNAME(const std::string & name, bool required, DATAT value) \
+  {                                                                                                         \
+    return {name, required, details::CallbackOrValue<DATAT, void>{value}};                                  \
+  }                                                                                                         \
+                                                                                                            \
+  template<typename Callback, typename std::enable_if<details::is_getter<Callback>(), int>::type = 0>       \
+  inline details::FormDataInput<DATAT, ELEMENT, Callback> FNAME(const std::string & name, bool required,    \
+                                                                Callback callback)                          \
+  {                                                                                                         \
+    return {name, required, details::CallbackOrValue<DATAT, Callback>{callback}};                           \
   }
 
 MAKE_DATA_INPUT_HELPER(bool, Elements::Checkbox, FormCheckbox)
@@ -245,7 +215,7 @@ MAKE_DATA_INPUT_HELPER(std::string, Elements::StringInput, FormStringInput)
 
 #undef MAKE_DATA_INPUT_HELPER
 
-namespace internal
+namespace details
 {
 
 template<typename T, typename DataCallback = void>
@@ -263,15 +233,9 @@ struct FormArrayInput : public FormElement<FormArrayInput<T, DataCallback>, Elem
     has_def_ = false;
   }
 
-  static constexpr size_t write_size_()
-  {
-    return 3;
-  }
+  static constexpr size_t write_size_() { return 3; }
 
-  static constexpr bool is_dynamic()
-  {
-    return !std::is_same<DataCallback, void>::value;
-  }
+  static constexpr bool is_dynamic() { return !std::is_same<DataCallback, void>::value; }
 
   void write_(mc_rtc::MessagePackBuilder & builder)
   {
@@ -289,31 +253,31 @@ private:
   bool has_def_;
 };
 
-} // namespace internal
+} // namespace details
 
 template<typename T>
-inline internal::FormArrayInput<T> FormArrayInput(const std::string & name, bool required, bool fixed_size = false)
+details::FormArrayInput<T> FormArrayInput(const std::string & name, bool required, bool fixed_size = false)
 {
   return {name, required, fixed_size};
 }
 
 template<typename T, typename std::enable_if<!details::is_getter<T>(), int>::type = 0>
-inline internal::FormArrayInput<T> FormArrayInput(const std::string & name,
-                                                  bool required,
-                                                  const T & value,
-                                                  bool fixed_size = true)
+inline details::FormArrayInput<T> FormArrayInput(const std::string & name,
+                                                 bool required,
+                                                 const T & value,
+                                                 bool fixed_size = true)
 {
-  return {name, required, internal::CallbackOrValue<T, void>{value}, fixed_size};
+  return {name, required, details::CallbackOrValue<T, void>{value}, fixed_size};
 }
 
 template<typename Callback, typename std::enable_if<details::is_getter<Callback>(), int>::type = 0>
-inline internal::FormArrayInput<details::ReturnTypeT<Callback>, Callback> FormArrayInput(const std::string & name,
-                                                                                         bool required,
-                                                                                         Callback callback,
-                                                                                         bool fixed_size = true)
+inline details::FormArrayInput<details::ReturnTypeT<Callback>, Callback> FormArrayInput(const std::string & name,
+                                                                                        bool required,
+                                                                                        Callback callback,
+                                                                                        bool fixed_size = true)
 {
   using ReturnT = details::ReturnTypeT<Callback>;
-  return {name, required, internal::CallbackOrValue<ReturnT, Callback>{callback}, fixed_size};
+  return {name, required, details::CallbackOrValue<ReturnT, Callback>{callback}, fixed_size};
 }
 
 struct FormComboInput : public FormElement<FormComboInput, Elements::ComboInput>
@@ -328,10 +292,7 @@ struct FormComboInput : public FormElement<FormComboInput, Elements::ComboInput>
   {
   }
 
-  static constexpr size_t write_size_()
-  {
-    return 3;
-  }
+  static constexpr size_t write_size_() { return 3; }
 
   inline void write_(mc_rtc::MessagePackBuilder & builder)
   {
@@ -361,10 +322,7 @@ struct FormDataComboInput : public FormElement<FormDataComboInput, Elements::Dat
   {
   }
 
-  static constexpr size_t write_size_()
-  {
-    return 2;
-  }
+  static constexpr size_t write_size_() { return 2; }
 
   inline void write_(mc_rtc::MessagePackBuilder & builder)
   {
@@ -382,11 +340,9 @@ private:
 
 /** Helper to create a Form element */
 template<typename Callback, typename... Args>
-FormImpl<Callback> Form(const std::string & name, Callback cb, Args &&... args)
+auto Form(const std::string & name, Callback cb, Args &&... args)
 {
-  return FormImpl<Callback>(name, cb, std::forward<Args>(args)...);
+  return details::FormImpl(name, cb, std::forward<Args>(args)...);
 }
 
-} // namespace gui
-
-} // namespace mc_rtc
+} // namespace mc_rtc::gui

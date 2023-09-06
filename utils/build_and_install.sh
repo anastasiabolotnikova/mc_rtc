@@ -520,12 +520,10 @@ readonly PYTHON_VERSION
 
 export PATH=$INSTALL_PREFIX/bin:$PATH
 export LD_LIBRARY_PATH=$INSTALL_PREFIX/lib:$LD_LIBRARY_PATH
-export DYLD_LIBRARY_PATH=$INSTALL_PREFIX/lib:$DYLD_LIBRARY_PATH
 export PKG_CONFIG_PATH=$INSTALL_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH
 export PYTHONPATH=$INSTALL_PREFIX/lib/python$PYTHON_VERSION/site-packages:$PYTHONPATH
 echo_log "PATH: $PATH"
 echo_log "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
-echo_log "DYLD_LIBRARY_PATH: $DYLD_LIBRARY_PATH"
 echo_log "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
 echo_log "PYTHONPATH: $PYTHONPATH"
 
@@ -617,19 +615,7 @@ then
     brew upgrade $BREW_DEPENDENCIES
     if [ "x$WITH_PYTHON_SUPPORT" == xON ] && $NOT_CLONE_ONLY
     then
-      if [ "x$PYTHON_BUILD_PYTHON2_AND_PYTHON3" == xON ]
-      then
-        sudo pip2 install $PIP_DEPENDENCIES
-        sudo pip3 install $PIP_DEPENDENCIES
-      elif [ "x$PYTHON_FORCE_PYTHON2" == xON ]
-      then
-        sudo pip2 install $PIP_DEPENDENCIES
-      elif [ "x$PYTHON_FORCE_PYTHON3" == xON ]
-      then
-        sudo pip3 install $PIP_DEPENDENCIES
-      else
-        sudo pip install $PIP_DEPENDENCIES
-      fi
+      python3 -m pip install $PIP_DEPENDENCIES
     fi
     mc_rtc_extra_steps
   else
@@ -650,11 +636,32 @@ then
   else
     echo_log "-- [WARNING] This script does not support your OS: ${OS}, assuming you have installed the required system dependencies already"
   fi
+  if [ $OS = Ubuntu ]
+  then
+    if [[ ! -f /etc/apt/sources.list.d/kitware.list ]]
+    then
+      wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | ${REQUIRED_SUDO} tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
+      echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -sc) main" | ${REQUIRED_SUDO} tee /etc/apt/sources.list.d/kitware.list >/dev/null
+      ${REQUIRED_SUDO} apt-get update
+      ${REQUIRED_SUDO} apt-get install --only-upgrade cmake cmake-curses-gui
+    fi
+  fi
+  if [ $OS = Debian ]
+  then
+    CMAKE_VERSION="3.25.2"
+    CMAKE_VERSION_FULL="${CMAKE_VERSION}-linux-$(uname -m)"
+    if [ ! -f cmake-${CMAKE_VERSION_FULL}.sh ]
+    then
+      wget -O cmake-${CMAKE_VERSION_FULL}.sh https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION_FULL}.sh
+      chmod +x cmake-${CMAKE_VERSION_FULL}.sh
+      ${REQUIRED_SUDO} ./cmake-${CMAKE_VERSION_FULL}.sh --skip-license --prefix=/usr --exclude-subdir
+    fi
+  fi
 else
   export OS=Windows
   if [ "x$WITH_PYTHON_SUPPORT" == xON ] && $NOT_CLONE_ONLY
   then
-    pip install --user ${PIP_DEPENDENCIES}
+    python -m pip install --user ${PIP_DEPENDENCIES}
   fi
   mc_rtc_extra_steps
 fi
@@ -662,37 +669,6 @@ fi
 echo_log ""
 echo_log "-- [SUCCESS] Successfully installed system dependencies"
 echo_log ""
-
-###############################################
-#  -- Check python/pip coherency if needed -- #
-###############################################
-
-if [ "x$WITH_PYTHON_SUPPORT" == xON ] && [ "x$PYTHON_FORCE_PYTHON2" == xOFF ] && [ "x$PYTHON_FORCE_PYTHON3" == xOFF ]
-then
-  if ! pip --version | grep -q "`python -c 'import sys; print(\"python {}.{}\".format(sys.version_info.major, sys.version_info.minor));'`"
-  then
-    echo_log "The pip command does not match the corresponding python version, this will lead to errors"
-    echo_log "Either fix your system or use --python-force-python2 true or --python-force-python3 true"
-  fi
-fi
-
-if [ "x$WITH_PYTHON_SUPPORT" == xON ] && ( [ "x$PYTHON_FORCE_PYTHON2" == xON ] || [ "x$PYTHON_BUILD_PYTHON2_AND_PYTHON3" == xON ] )
-then
-  if ! pip2 --version | grep -q "`python2 -c 'import sys; print(\"python {}.{}\".format(sys.version_info.major, sys.version_info.minor));'`"
-  then
-    echo_log "The pip2 command does not match the corresponding python2 version, this will lead to errors"
-    echo_log "Resolve the issue at your system level"
-  fi
-fi
-
-if [ "x$WITH_PYTHON_SUPPORT" == xON ] && ( [ "x$PYTHON_FORCE_PYTHON3" == xON ] || [ "x$PYTHON_BUILD_PYTHON3_AND_PYTHON3" == xON ] )
-then
-  if ! pip3 --version | grep -q "`python3 -c 'import sys; print(\"python {}.{}\".format(sys.version_info.major, sys.version_info.minor));'`"
-  then
-    echo_log "The pip3 command does not match the corresponding python3 version, this will lead to errors"
-    echo_log "Resolve the issue at your system level"
-  fi
-fi
 
 ########################
 ##  -- Install ROS --  #
@@ -943,7 +919,7 @@ check_and_clone_git_dependency()
 }
 
 # If the dependencies have already been cloned, check if the local state of the repository is clean before upgrading
-GIT_DEPENDENCIES="loco-3d/ndcurves#v1.1.5 jrl-umi3218/SpaceVecAlg jrl-umi3218/state-observation jrl-umi3218/sch-core jrl-umi3218/RBDyn jrl-umi3218/eigen-qld jrl-umi3218/eigen-quadprog jrl-umi3218/Tasks"
+GIT_DEPENDENCIES="loco-3d/ndcurves#v1.1.5 jrl-umi3218/SpaceVecAlg jrl-umi3218/state-observation jrl-umi3218/sch-core jrl-umi3218/RBDyn jrl-umi3218/eigen-qld jrl-umi3218/eigen-quadprog jrl-umi3218/Tasks jrl-umi3218/tvm"
 if [ "x$SYSTEM_HAS_SPDLOG" == xOFF ]
 then
   GIT_DEPENDENCIES="gabime/spdlog#v1.6.1 $GIT_DEPENDENCIES"
@@ -982,13 +958,13 @@ if $WITH_HRP2
 then
   if $WITH_ROS_SUPPORT
   then
-    check_and_clone_git_dependency git@gite.lirmm.fr:mc-hrp2/hrp2_drc_description#main $CATKIN_DATA_WORKSPACE_SRC
+    check_and_clone_git_dependency git@github.com:isri-aist/hrp2_drc_description#main $CATKIN_DATA_WORKSPACE_SRC
     echo_log "-- [OK] Successfully cloned and updated the robot description to $git_dep to $repo_dir (catkin)"
   else
-    check_and_clone_git_dependency git@gite.lirmm.fr:mc-hrp2/hrp2_drc_description#main $SOURCE_DIR
+    check_and_clone_git_dependency git@github.com:isri-aist/hrp2_drc_description#main $SOURCE_DIR
     echo_log "-- [OK] Successfully cloned and updated the robot description $git_dep to $repo_dir (no catkin)"
   fi
-  check_and_clone_git_dependency git@gite.lirmm.fr:mc-hrp2/mc-hrp2 $SOURCE_DIR
+  check_and_clone_git_dependency git@github.com:isri-aist/mc-hrp2 $SOURCE_DIR
   echo_log "-- [OK] Successfully cloned and updated the robot module $git_dep to $repo_dir"
 fi
 
@@ -1038,13 +1014,13 @@ if $WITH_HRP5
 then
   if $WITH_ROS_SUPPORT
   then
-    check_and_clone_git_dependency git@gite.lirmm.fr:mc-hrp5/hrp5_p_description $CATKIN_DATA_WORKSPACE_SRC
+    check_and_clone_git_dependency git@github.com:isri-aist/hrp5_p_description $CATKIN_DATA_WORKSPACE_SRC
     echo_log "-- [OK] Successfully cloned and updated the robot description $git_dep to $repo_dir (catkin)"
   else
-    check_and_clone_git_dependency git@gite.lirmm.fr:mc-hrp5/hrp5_p_description $SOURCE_DIR
+    check_and_clone_git_dependency git@github.com:isri-aist/hrp5_p_description $SOURCE_DIR
     echo_log "-- [OK] Successfully cloned and updated the robot description $git_dep to $repo_dir (no catkin)"
   fi
-  check_and_clone_git_dependency git@gite.lirmm.fr:mc-hrp5/mc_hrp5_p $SOURCE_DIR
+  check_and_clone_git_dependency git@github.com:isri-aist/mc_hrp5_p $SOURCE_DIR
   echo_log "-- [OK] Successfully cloned and updated the robot module $git_dep to $repo_dir"
 fi
 
@@ -1283,6 +1259,13 @@ export DISABLE_NINJA=OFF
 
 build_git_dependency jrl-umi3218/Tasks tasks
 
+export CMAKE_ADDITIONAL_OPTIONS="-DTVM_WITH_QUADPROG:BOOL=ON -DTVM_WITH_ROBOT:BOOL=OFF ${OLD_CMAKE_OPTIONS}"
+if $WITH_LSSOL
+then
+  export CMAKE_ADDITIONAL_OPTIONS="-DTVM_WITH_LSSOL:BOOL=ON ${CMAKE_ADDITIONAL_OPTIONS}"
+fi
+build_git_dependency jrl-umi3218/tvm
+
 if $WITH_ROS_SUPPORT
 then
   build_catkin_workspace $CATKIN_DATA_WORKSPACE
@@ -1410,10 +1393,10 @@ then
   echo_log "-- Installing with HRP2 robot support"
   if ! $WITH_ROS_SUPPORT
   then
-    build_git_dependency git@gite.lirmm.fr:mc-hrp2/hrp2_drc_description
+    build_git_dependency git@github.com:isri-aist/hrp2_drc_description
     echo_log "-- [OK] Successfully built the robot description $git_dep (no catkin)"
   fi
-  build_git_dependency git@gite.lirmm.fr:mc-hrp2/mc-hrp2
+  build_git_dependency git@github.com:isri-aist/mc-hrp2
   echo_log "-- [OK] Successfully built the robot module $git_dep"
 fi
 
@@ -1458,10 +1441,10 @@ then
   echo_log "-- Installing with HRP5 robot support"
   if ! $WITH_ROS_SUPPORT
   then
-    build_git_dependency git@gite.lirmm.fr:mc-hrp5/hrp5_p_description
+    build_git_dependency git@github.com:isri-aist/hrp5_p_description
     echo_log "-- [OK] Successfully built the robot description $git_dep (no catkin)"
   fi
-  build_git_dependency git@gite.lirmm.fr:mc-hrp5/mc_hrp5_p
+  build_git_dependency git@github.com:isri-aist/mc_hrp5_p
   echo_log "-- [OK] Successfully built the robot module $git_dep"
 fi
 
@@ -1500,7 +1483,6 @@ echo_log ""
 if [[ $OSTYPE == "darwin"* ]]
 then
   echo_log "export PATH=$INSTALL_PREFIX/bin:\$PATH"
-  echo_log "export DYLD_LIBRARY_PATH=$INSTALL_PREFIX/lib:\$DYLD_LIBRARY_PATH"
   echo_log "export PKG_CONFIG_PATH=$INSTALL_PREFIX/lib/pkgconfig:\$PKG_CONFIG_PATH"
   echo_log "export PYTHONPATH=$INSTALL_PREFIX/lib/python$PYTHON_VERSION/site-packages:\$PYTHONPATH"
 else

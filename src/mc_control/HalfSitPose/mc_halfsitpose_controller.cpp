@@ -27,17 +27,13 @@ MCHalfSitPoseController::MCHalfSitPoseController(std::shared_ptr<mc_rbdyn::Robot
     {
       auto jIndex = robot().jointIndexByName(j);
       const auto & jTarget = halfSit.at(j);
-      if(halfSitPose[jIndex].size() == jTarget.size())
-      {
-        halfSitPose[jIndex] = jTarget;
-      }
+      if(halfSitPose[jIndex].size() == jTarget.size()) { halfSitPose[jIndex] = jTarget; }
     }
   }
 
-  selfCollisionConstraint.reset();
   qpsolver->addConstraintSet(selfCollisionConstraint);
   /* Get the complete collision constraint set */
-  selfCollisionConstraint.addCollisions(solver(), robot_module->commonSelfCollisions());
+  selfCollisionConstraint->addCollisions(solver(), robot_module->commonSelfCollisions());
   qpsolver->addConstraintSet(kinematicsConstraint);
   qpsolver->addTask(postureTask.get());
   qpsolver->addConstraintSet(contactConstraint);

@@ -7,6 +7,7 @@
 
 #include <mc_observers/KinematicInertialPoseObserver.h>
 #include <mc_observers/ObserverMacros.h>
+#include <state-observation/tools/rigid-body-kinematics.hpp>
 
 #include <mc_control/MCController.h>
 #include <mc_rbdyn/rpy_utils.h>
@@ -62,13 +63,13 @@ bool KinematicInertialPoseObserver::run(const mc_control::MCController & ctl)
   anchorFrameJumped_ = false;
   auto anchorFrame = ctl.datastore().call<sva::PTransformd>(anchorFrameFunction_, ctl.robot(robot_));
   auto anchorFrameReal = ctl.datastore().call<sva::PTransformd>(anchorFrameFunction_, ctl.realRobot(realRobot_));
-  auto error = (anchorFrame.translation() - X_0_anchorFrame_.translation()).norm();
   if(firstIter_)
   { // Ignore anchor frame check on first iteration
     firstIter_ = false;
   }
   else
   { // Check whether anchor frame jumped
+    auto error = (anchorFrame.translation() - X_0_anchorFrame_.translation()).norm();
     if(error > maxAnchorFrameDiscontinuity_)
     {
       mc_rtc::log::warning("[{}] Control anchor frame jumped from [{}] to [{}] (error norm {} > threshold {})", name(),
@@ -76,11 +77,12 @@ bool KinematicInertialPoseObserver::run(const mc_control::MCController & ctl)
                            MC_FMT_STREAMED(anchorFrame.translation().transpose()), error, maxAnchorFrameDiscontinuity_);
       anchorFrameJumped_ = true;
     }
-    if((anchorFrameReal.translation() - X_0_anchorFrameReal_.translation()).norm() > maxAnchorFrameDiscontinuity_)
+    auto errorReal = (anchorFrameReal.translation() - X_0_anchorFrameReal_.translation()).norm();
+    if(errorReal > maxAnchorFrameDiscontinuity_)
     {
       mc_rtc::log::warning("[{}] Real anchor frame jumped from [{}] to [{}] (error norm {:.3f} > threshold {:.3f})",
                            name(), MC_FMT_STREAMED(X_0_anchorFrameReal_.translation().transpose()),
-                           MC_FMT_STREAMED(anchorFrameReal.translation().transpose()), error,
+                           MC_FMT_STREAMED(anchorFrameReal.translation().transpose()), errorReal,
                            maxAnchorFrameDiscontinuity_);
       anchorFrameJumped_ = true;
     }
@@ -106,10 +108,11 @@ void KinematicInertialPoseObserver::estimateOrientation(const mc_rbdyn::Robot & 
   const sva::PTransformd & X_0_cIMU = robot.bodyPosW(imuParent);
   sva::PTransformd X_rIMU_rBase = X_0_rBase * X_0_rIMU.inv();
 
-  Eigen::Matrix3d E_0_mIMU = imuSensor.orientation().toRotationMatrix();
+  Eigen::Matrix3d E_0_mIMU = imuSensor.X_b_s().rotation().transpose() * imuSensor.orientation().toRotationMatrix();
   const Eigen::Matrix3d & E_0_cIMU = X_0_cIMU.rotation();
   // Estimate IMU orientation: merges roll+pitch from measurement with yaw from control
-  Eigen::Matrix3d E_0_eIMU = mergeRoll1Pitch1WithYaw2(E_0_mIMU, E_0_cIMU);
+  Eigen::Matrix3d E_0_eIMU =
+      stateObservation::kine::mergeRoll1Pitch1WithYaw2AxisAgnostic(E_0_mIMU, E_0_cIMU).transpose();
   pose_.rotation() = X_rIMU_rBase.rotation() * E_0_eIMU.transpose();
 }
 
@@ -139,10 +142,7 @@ void KinematicInertialPoseObserver::addToLogger(const mc_control::MCController &
                                                 mc_rtc::Logger & logger,
                                                 const std::string & category)
 {
-  if(logPose_)
-  {
-    MC_RTC_LOG_HELPER(category + "_posW", pose_);
-  }
+  if(logPose_) { MC_RTC_LOG_HELPER(category + "_posW", pose_); }
   if(logAnchorFrame_)
   {
     MC_RTC_LOG_HELPER(category + "_anchorFrame", X_0_anchorFrame_);
@@ -154,8 +154,8 @@ void KinematicInertialPoseObserver::addToGUI(const mc_control::MCController & ct
                                              mc_rtc::gui::StateBuilder & gui,
                                              const std::vector<std::string> & category)
 {
-  auto showHideAnchorFrame = [&gui, category](const std::string & name, bool show,
-                                              const sva::PTransformd & anchorFrame) {
+  auto showHideAnchorFrame = [&gui, category](const std::string & name, bool show, const sva::PTransformd & anchorFrame)
+  {
     auto cat = category;
     cat.push_back("Markers");
     gui.removeElement(cat, name);
@@ -165,7 +165,8 @@ void KinematicInertialPoseObserver::addToGUI(const mc_control::MCController & ct
           cat, mc_rtc::gui::Transform(name, [&anchorFrame]() -> const sva::PTransformd & { return anchorFrame; }));
     }
   };
-  auto showHidePose = [this, category, &gui]() {
+  auto showHidePose = [this, category, &gui]()
+  {
     std::string name = "Pose";
     auto cat = category;
     cat.push_back("Markers");
@@ -179,19 +180,22 @@ void KinematicInertialPoseObserver::addToGUI(const mc_control::MCController & ct
   gui.addElement(category,
                  mc_rtc::gui::Checkbox(
                      "Show anchor frame (control)", [this]() { return showAnchorFrame_; },
-                     [this, showHideAnchorFrame]() {
+                     [this, showHideAnchorFrame]()
+                     {
                        showAnchorFrame_ = !showAnchorFrame_;
                        showHideAnchorFrame("Anchor Frame (control)", showAnchorFrame_, X_0_anchorFrame_);
                      }),
                  mc_rtc::gui::Checkbox(
                      "Show anchor frame (real)", [this]() { return showAnchorFrameReal_; },
-                     [this, showHideAnchorFrame]() {
+                     [this, showHideAnchorFrame]()
+                     {
                        showAnchorFrameReal_ = !showAnchorFrameReal_;
                        showHideAnchorFrame("Anchor Frame (real)", showAnchorFrameReal_, X_0_anchorFrameReal_);
                      }),
                  mc_rtc::gui::Checkbox(
                      "Show pose", [this]() { return showPose_; },
-                     [this, showHidePose]() {
+                     [this, showHidePose]()
+                     {
                        showPose_ = !showPose_;
                        showHidePose();
                      }));
@@ -214,36 +218,6 @@ void KinematicInertialPoseObserver::addToGUI(const mc_control::MCController & ct
   showHideAnchorFrame("Anchor Frame (control)", showAnchorFrame_, X_0_anchorFrame_);
   showHideAnchorFrame("Anchor Frame (real)", showAnchorFrameReal_, X_0_anchorFrameReal_);
   showHidePose();
-}
-
-inline Eigen::Matrix3d KinematicInertialPoseObserver::mergeRoll1Pitch1WithYaw2(const Eigen::Matrix3d & R1,
-                                                                               const Eigen::Matrix3d & R2,
-                                                                               double epsilonAngle)
-{
-  using Matrix3 = Eigen::Matrix3d;
-  using Vector3 = Eigen::Vector3d;
-
-  const Vector3 & ez = Vector3::UnitZ();
-  Matrix3 R_temp1, R_temp2;
-  Vector3 v1 = R1 * ez;
-  Vector3 mlxv1 = (R2 * Vector3::UnitX()).cross(v1);
-  double n2 = mlxv1.squaredNorm();
-
-  if(n2 > epsilonAngle * epsilonAngle)
-  {
-    // we take m=ex
-    R_temp1 << -Vector3::UnitY(), Vector3::UnitX(), ez;
-    mlxv1 /= sqrt(n2);
-    R_temp2 << mlxv1.transpose(), v1.cross(mlxv1).transpose(), v1.transpose();
-    return R_temp1 * R_temp2;
-  }
-  else
-  {
-    // we take m=ey
-    mlxv1 = (R2 * Vector3::UnitY()).cross(v1).normalized();
-    R_temp2 << mlxv1.transpose(), v1.cross(mlxv1).transpose(), v1.transpose();
-    return R_temp2.transpose();
-  }
 }
 
 } // namespace mc_observers

@@ -14,14 +14,12 @@ namespace mc_control
 
 struct MC_CONTROL_DLLAPI MCCoMController : public MCController
 {
-  MCCoMController(std::shared_ptr<mc_rbdyn::RobotModule> robot, double dt);
+  MCCoMController(std::shared_ptr<mc_rbdyn::RobotModule> robot, double dt, Backend backend);
   void reset(const ControllerResetData & reset_data) override;
 
 protected:
   std::shared_ptr<mc_tasks::CoMTask> comTask;
-  std::string leftFootSurface_, rightFootSurface_;
+  std::vector<std::string> surfaces_;
 };
 
 } // namespace mc_control
-
-SIMPLE_CONTROLLER_CONSTRUCTOR("CoM", mc_control::MCCoMController)

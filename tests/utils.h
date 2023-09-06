@@ -102,6 +102,13 @@ size_t random_size()
   return dis(gen);
 }
 
+size_t random_size_except(size_t s)
+{
+  auto out = random_size();
+  while(out == s) { out = random_size(); }
+  return out;
+}
+
 bool random_bool()
 {
   static std::random_device rd;
@@ -113,10 +120,7 @@ bool random_bool()
 std::vector<double> random_vector()
 {
   std::vector<double> v(random_size());
-  for(size_t i = 0; i < v.size(); ++i)
-  {
-    v[i] = rnd();
-  }
+  for(size_t i = 0; i < v.size(); ++i) { v[i] = rnd(); }
   return v;
 }
 

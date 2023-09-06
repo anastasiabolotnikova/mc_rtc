@@ -1,16 +1,10 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #include "python_controller.h"
 
-#pragma GCC diagnostic push
-#ifdef __clang__
-#  pragma GCC diagnostic ignored "-Wdeprecated-register"
-#endif
-#pragma GCC diagnostic ignored "-Wregister"
-#include <Python.h>
-#pragma GCC diagnostic pop
+#include <mc_rtc/mc_rtc_python.h>
 
 #include <mc_control/mc_python_controller.h>
 
@@ -28,11 +22,7 @@ extern "C"
     // The Python object should be garbage collected, so we only take care of
     // the C++ memory we allocated
     delete ptr;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-variable"
-    auto gstate = PyGILState_Ensure();
-#pragma GCC diagnostic pop
-    Py_Finalize();
+    mc_rtc::python::Finalize();
   }
   mc_control::MCController * create(const std::string &,
                                     const std::string & controller_name,
@@ -40,16 +30,28 @@ extern "C"
                                     const double & dt,
                                     const mc_control::Configuration &)
   {
-    if(!Py_IsInitialized())
-    {
-      Py_Initialize();
-      PyEval_SaveThread();
-    }
+    mc_rtc::log::info("[PythonController] Running with Python {}.{}.{}", PY_MAJOR_VERSION, PY_MINOR_VERSION,
+                      PY_MICRO_VERSION);
+    mc_rtc::python::Initialize();
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
     auto gstate = PyGILState_Ensure();
 #pragma GCC diagnostic pop
     PySys_SetArgvEx(0, {}, 0);
+
+    auto sys_path_object = PySys_GetObject("path");
+    PyErr_Print();
+    auto sys_path_repr = PyObject_Repr(sys_path_object);
+    PyErr_Print();
+#if PY_MAJOR_VERSION > 2
+    auto sys_path_str = PyUnicode_AsUTF8String(sys_path_repr);
+    PyErr_Print();
+    auto sys_path = PyBytes_AsString(sys_path_str);
+#else
+    auto sys_path = PyString_AsString(sys_path_repr);
+#endif
+    PyErr_Print();
+    mc_rtc::log::info("[PythonController] sys.path: {}", sys_path);
 
     auto signal_mod = PyImport_ImportModule("signal");
     PyErr_Print();
@@ -104,8 +106,20 @@ extern "C"
     PyErr_Print();
 
     PyGILState_Release(gstate);
-    MCControllerObject * res = (MCControllerObject *)(c_obj);
-    return res->base;
+    MCPythonControllerObject * res = (MCPythonControllerObject *)(c_obj);
+    res->impl->handle_python_error = []() -> bool
+    {
+      auto gstate = PyGILState_Ensure();
+      auto error = PyErr_Occurred();
+      if(error)
+      {
+        mc_rtc::log::error("[PythonController] Fatal error in Python module");
+        PyErr_Print();
+      }
+      PyGILState_Release(gstate);
+      return error != nullptr;
+    };
+    return res->impl;
   }
   void LOAD_GLOBAL() {}
 }

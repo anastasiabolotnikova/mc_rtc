@@ -97,21 +97,27 @@ public:
       double dt,
       const mc_rtc::Configuration & config) const override;
 
+  /**
+   * @brief Wether to compute the desired torque with the target pressure (true) of the measured one (false)
+   *
+   * @param s
+   */
+  inline void useTargetPressure(bool s) noexcept { useTargetPressure_ = s; }
+
+  /**
+   * @brief Wether the computeddesired torque is done with the target pressure (true) of the measured one (false)
+   */
+  inline bool useTargetPressure() const noexcept { return useTargetPressure_; }
+
   /*! \brief Measured CoP in target frame.
    *
    */
-  Eigen::Vector2d measuredCoP() const
-  {
-    return frame_->cop();
-  }
+  Eigen::Vector2d measuredCoP() const { return frame_->cop(); }
 
   /*! \brief Measured CoP in world frame.
    *
    */
-  Eigen::Vector3d measuredCoPW() const
-  {
-    return frame_->copW();
-  }
+  Eigen::Vector3d measuredCoPW() const { return frame_->copW(); }
 
   /*! \brief Set targent wrench to zero.
    *
@@ -123,10 +129,7 @@ public:
   }
 
   /*! \brief Get target CoP in the control frame. */
-  const Eigen::Vector2d & targetCoP() const
-  {
-    return targetCoP_;
-  }
+  const Eigen::Vector2d & targetCoP() const { return targetCoP_; }
 
   /*! \brief Get target CoP in the world frame. */
   Eigen::Vector3d targetCoPW() const
@@ -142,26 +145,17 @@ public:
    * \param targetCoP 2D vector of CoP coordinates in the control frame
    *
    */
-  void targetCoP(const Eigen::Vector2d & targetCoP)
-  {
-    targetCoP_ = targetCoP;
-  }
+  void targetCoP(const Eigen::Vector2d & targetCoP) { targetCoP_ = targetCoP; }
 
   /*! \brief Get target force in the control frame */
-  const Eigen::Vector3d & targetForce() const
-  {
-    return targetForce_;
-  }
+  const Eigen::Vector3d & targetForce() const { return targetForce_; }
 
   /*! \brief Set target force in the control frame
    *
    * \param targetForce 3D vector of target force in the control frame
    *
    */
-  void targetForce(const Eigen::Vector3d & targetForce)
-  {
-    targetForce_ = targetForce;
-  }
+  void targetForce(const Eigen::Vector3d & targetForce) { targetForce_ = targetForce; }
 
   /*! \brief Set target force in the world frame
    *
@@ -176,10 +170,7 @@ public:
   /*! \brief Get target wrench in the control frame
    *
    */
-  const sva::ForceVecd & targetWrench() const
-  {
-    return AdmittanceTask::targetWrench();
-  }
+  const sva::ForceVecd & targetWrench() const { return AdmittanceTask::targetWrench(); }
 
   /*! \brief Load parameters from a Configuration object */
   void load(mc_solver::QPSolver & solver, const mc_rtc::Configuration & config) override;
@@ -191,6 +182,8 @@ protected:
 private:
   Eigen::Vector2d targetCoP_ = Eigen::Vector2d::Zero();
   Eigen::Vector3d targetForce_ = Eigen::Vector3d::Zero();
+
+  bool useTargetPressure_ = false;
 
   void update(mc_solver::QPSolver &) override;
 

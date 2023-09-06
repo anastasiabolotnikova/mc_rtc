@@ -9,8 +9,10 @@
 namespace mc_control
 {
 
-MCImpedanceController::MCImpedanceController(std::shared_ptr<mc_rbdyn::RobotModule> robot_module, double dt)
-: MCController(robot_module, dt)
+MCImpedanceController::MCImpedanceController(std::shared_ptr<mc_rbdyn::RobotModule> robot_module,
+                                             double dt,
+                                             Backend backend)
+: MCController(robot_module, dt, backend)
 {
   solver().addConstraintSet(contactConstraint);
   solver().addConstraintSet(kinematicsConstraint);
@@ -58,8 +60,8 @@ void MCImpedanceController::reset(const ControllerResetData & reset_data)
   {
     comTask_->reset();
     solver().addTask(comTask_);
-    solver().setContacts(
-        {mc_rbdyn::Contact(robots(), "LeftFoot", "AllGround"), mc_rbdyn::Contact(robots(), "RightFoot", "AllGround")});
+    addContact(Contact{robot().name(), env().name(), "LeftFoot", "AllGround"});
+    addContact(Contact{robot().name(), env().name(), "RightFoot", "AllGround"});
   }
 
   impedanceTask_->reset();
@@ -97,9 +99,8 @@ void MCImpedanceController::addGUI()
     circleSamples[i] = circleTrajectory(angle);
   }
   gui()->addElement({"Impedance"}, mc_rtc::gui::Trajectory("Circle Trajectory",
-                                                           [circleSamples]() -> const std::vector<Eigen::Vector3d> & {
-                                                             return circleSamples;
-                                                           }));
+                                                           [circleSamples]() -> const std::vector<Eigen::Vector3d> &
+                                                           { return circleSamples; }));
 }
 
 void MCImpedanceController::stop()
@@ -108,3 +109,8 @@ void MCImpedanceController::stop()
 }
 
 } // namespace mc_control
+
+MULTI_CONTROLLERS_CONSTRUCTOR("Impedance",
+                              mc_control::MCImpedanceController(rm, dt, mc_control::MCController::Backend::Tasks),
+                              "Impedance_TVM",
+                              mc_control::MCImpedanceController(rm, dt, mc_control::MCController::Backend::TVM))

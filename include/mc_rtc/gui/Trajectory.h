@@ -8,10 +8,10 @@
 #include <mc_rtc/gui/elements.h>
 #include <mc_rtc/gui/types.h>
 
-namespace mc_rtc
+namespace mc_rtc::gui
 {
 
-namespace gui
+namespace details
 {
 
 /** Trajectory can represent a pre-defined trajectory or a real-time trajectory
@@ -40,10 +40,7 @@ struct TrajectoryImpl : public DataElement<GetT>
   /** Invalid element */
   TrajectoryImpl() {}
 
-  constexpr static size_t write_size()
-  {
-    return DataElement<GetT>::write_size() + LineConfig::write_size();
-  }
+  constexpr static size_t write_size() { return DataElement<GetT>::write_size() + LineConfig::write_size(); }
 
   void write(mc_rtc::MessagePackBuilder & builder)
   {
@@ -55,20 +52,20 @@ private:
   LineConfig config_;
 };
 
+} // namespace details
+
 /** Function helper to get a TrajectoryImpl */
 template<typename GetT>
-TrajectoryImpl<GetT> Trajectory(const std::string & name, GetT get_fn)
+auto Trajectory(const std::string & name, GetT get_fn)
 {
-  return TrajectoryImpl<GetT>(name, {}, get_fn);
+  return details::TrajectoryImpl(name, {}, get_fn);
 }
 
 /** Function helper to get a TrajectoryImpl */
 template<typename GetT>
-TrajectoryImpl<GetT> Trajectory(const std::string & name, const LineConfig & config, GetT get_fn)
+auto Trajectory(const std::string & name, const LineConfig & config, GetT get_fn)
 {
-  return TrajectoryImpl<GetT>(name, config, get_fn);
+  return details::TrajectoryImpl(name, config, get_fn);
 }
 
-} // namespace gui
-
-} // namespace mc_rtc
+} // namespace mc_rtc::gui

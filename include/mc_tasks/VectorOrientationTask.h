@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2019 CNRS-UM LIRMM, CNRS-AIST JRL
+ * Copyright 2015-2022 CNRS-UM LIRMM, CNRS-AIST JRL
  */
 
 #pragma once
@@ -9,12 +9,8 @@
 namespace mc_tasks
 {
 
-/*! \brief Control the orientation of a vector attached to a frame
- *
- * This task is thin wrapper around the appropriate tasks in Tasks.
- *
- */
-struct MC_TASKS_DLLAPI VectorOrientationTask : public TrajectoryTaskGeneric<tasks::qp::VectorOrientationTask>
+/*! \brief Control the orientation of a vector attached to a frame */
+struct MC_TASKS_DLLAPI VectorOrientationTask : public TrajectoryTaskGeneric
 {
   /*! \brief Constructor from a robot frame
    *
@@ -93,10 +89,7 @@ struct MC_TASKS_DLLAPI VectorOrientationTask : public TrajectoryTaskGeneric<task
   Eigen::Vector3d actual() const;
 
   /*! \brief Return the controlled body */
-  std::string body()
-  {
-    return frame_->body();
-  }
+  std::string body() { return frame_->body(); }
 
   void load(mc_solver::QPSolver & solver, const mc_rtc::Configuration & config) override;
 
