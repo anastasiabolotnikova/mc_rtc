@@ -109,6 +109,8 @@ tutorials:
       title: ROS統合
     global-plugins:
       title: グローバルプラグインの利用
+    schema:
+      title: フレームワークに統合されたスキーマ構造
   tools:
     title: ツール
     desc: これらのチュートリアルはmc_rtc関連の便利なツールを紹介します。
@@ -177,3 +179,4 @@ tutorials:
       title: MC_RTC_BUILD_STATICをプログラムでサポートする方法
     debug-lssol-output-6:
       title: LSSOL output 6のデバッグ
+or: または

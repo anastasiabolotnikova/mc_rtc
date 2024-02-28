@@ -16,6 +16,7 @@
 #  include <nav_msgs/msg/odometry.hpp>
 #  include <sensor_msgs/msg/imu.hpp>
 #  include <sensor_msgs/msg/joint_state.hpp>
+#  include <std_msgs/msg/string.hpp>
 
 #  include <rclcpp/rclcpp.hpp>
 #else
@@ -156,6 +157,8 @@ private:
   NodeHandle & nh;
 #if MC_RTC_ROS_IS_ROS2
   std::unique_ptr<rclcpp::Rate> rosRate;
+  Publisher<std_msgs::msg::String> paramsTopic;
+  Publisher<std_msgs::msg::String> descriptionTopic;
 #else
   ros::Rate rosRate;
 #endif
@@ -192,12 +195,33 @@ private:
   std::thread th;
 
   void publishThread();
+
+  void add_force_sensor(const mc_rbdyn::Robot & robot, const mc_rbdyn::ForceSensor & fs)
+  {
+#ifdef MC_RTC_ROS_IS_ROS2
+    auto tm = nh.now();
+#else
+    auto tm = Time::now();
+#endif
+    const std::string & name = fs.name();
+    data.wrenches.emplace_back();
+    auto & msg = data.wrenches.back();
+    msg.header.frame_id = prefix + name;
+    if(!robot.hasBody(fs.name()))
+    {
+      data.tfs.push_back(PT2TF(fs.X_p_f(), tm, prefix + fs.parentBody(), prefix + name, 0));
+    }
+  }
 };
 
 RobotPublisherImpl::RobotPublisherImpl(NodeHandle & nh, const std::string & prefix, double rate, double dt)
 : nh(nh),
 #if MC_RTC_ROS_IS_ROS2
   rosRate(std::make_unique<rclcpp::Rate>(rate)),
+  paramsTopic(
+      this->nh.create_publisher<std_msgs::msg::String>(prefix + "robot_module", rclcpp::QoS(1).transient_local())),
+  descriptionTopic(
+      this->nh.create_publisher<std_msgs::msg::String>(prefix + "robot_description", rclcpp::QoS(1).transient_local())),
   j_state_pub(this->nh.create_publisher<JointState>(prefix + "joint_states", 1)),
   imu_pub(this->nh.create_publisher<Imu>(prefix + "imu", 1)),
   j_sensor_pub(this->nh.create_publisher<JointSensors>(prefix + "joint_sensors", 1)),
@@ -270,17 +294,7 @@ void RobotPublisherImpl::init(const mc_rbdyn::Robot & robot, bool use_real)
     data.tfs.push_back(PT2TF(id, tm, prefix + predName, prefix + succName, 0));
   }
 
-  for(const auto & fs : robot.forceSensors())
-  {
-    const std::string & name = fs.name();
-    data.wrenches.emplace_back();
-    auto & msg = data.wrenches.back();
-    msg.header.frame_id = prefix + name;
-    if(!robot.hasBody(fs.name()))
-    {
-      data.tfs.push_back(PT2TF(fs.X_p_f(), tm, prefix + fs.parentBody(), prefix + name, 0));
-    }
-  }
+  for(const auto & fs : robot.forceSensors()) { add_force_sensor(robot, fs); }
 
   for(const auto & s : robot.surfaces())
   {
@@ -290,7 +304,16 @@ void RobotPublisherImpl::init(const mc_rbdyn::Robot & robot, bool use_real)
   }
 
 #ifdef MC_RTC_ROS_IS_ROS2
-  nh.set_parameter({prefix + "/robot_module", robot.module().parameters()});
+  {
+    std_msgs::msg::String msg;
+    const auto & params = robot.module().parameters();
+    for(size_t i = 0; i < params.size(); ++i)
+    {
+      msg.data += params[i];
+      if(i + 1 < params.size()) { msg.data += "#"; }
+    }
+    paramsTopic->publish(msg);
+  }
 #else
   nh.setParam(prefix + "/robot_module", robot.module().parameters());
 #endif
@@ -304,7 +327,11 @@ void RobotPublisherImpl::init(const mc_rbdyn::Robot & robot, bool use_real)
   std::stringstream urdf;
   urdf << ifs.rdbuf();
 #ifdef MC_RTC_ROS_IS_ROS2
-  nh.set_parameter({prefix + "/robot_description", urdf.str()});
+  {
+    std_msgs::msg::String msg;
+    msg.data = urdf.str();
+    descriptionTopic->publish(msg);
+  }
 #else
   nh.setParam(prefix + "/robot_description", urdf.str());
 #endif
@@ -406,7 +433,8 @@ void RobotPublisherImpl::update(double, const mc_rbdyn::Robot & robot)
     size_t wrench_i = 0;
     for(const auto & fs : robot.forceSensors())
     {
-      auto & msg = data.wrenches[wrench_i++];
+      if(wrench_i >= data.wrenches.size()) { add_force_sensor(robot, fs); }
+      auto & msg = data.wrenches[wrench_i];
       const sva::ForceVecd & wrench_sva = fs.wrench();
       msg.header.stamp = data.js.header.stamp;
 #ifndef MC_RTC_ROS_IS_ROS2
@@ -418,6 +446,7 @@ void RobotPublisherImpl::update(double, const mc_rbdyn::Robot & robot)
       msg.wrench.torque.x = wrench_sva.couple().x();
       msg.wrench.torque.y = wrench_sva.couple().y();
       msg.wrench.torque.z = wrench_sva.couple().z();
+      wrench_i++;
     }
   }
 
@@ -556,11 +585,10 @@ inline bool ros_init([[maybe_unused]] const std::string & name)
 {
   if(ros::ok()) { return true; }
   int argc = 0;
-  char * argv[] = {0};
 #ifdef MC_RTC_ROS_IS_ROS2
-  rclcpp::init(argc, argv);
+  rclcpp::init(argc, nullptr);
 #else
-  ros::init(argc, argv, name.c_str(), ros::init_options::NoSigintHandler);
+  ros::init(argc, nullptr, name.c_str(), ros::init_options::NoSigintHandler);
   if(!ros::master::check())
   {
     mc_rtc::log::warning("ROS master is not available, continue without ROS functionalities");

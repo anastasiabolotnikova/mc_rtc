@@ -34,6 +34,7 @@ endif()
 set(mc_rtc_ros_SRC src/mc_rtc_ros/ros.cpp)
 set(mc_rtc_ros_HDR include/mc_rtc_ros/ros.h include/mc_rtc_ros/api.h)
 add_library(mc_rtc_ros SHARED ${mc_rtc_ros_SRC} ${mc_rtc_ros_HDR})
+add_library(mc_rtc::mc_rtc_ros ALIAS mc_rtc_ros)
 set_target_properties(mc_rtc_ros PROPERTIES COMPILE_FLAGS "-DMC_RTC_ROS_EXPORTS")
 target_link_libraries(mc_rtc_ros PUBLIC mc_rtc::mc_rbdyn mc_rtc_3rd_party::ROS)
 target_include_directories(
@@ -91,7 +92,7 @@ set(plugin_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/plugin/ROS.cpp"
 set(plugin_HDR "${CMAKE_CURRENT_SOURCE_DIR}/src/plugin/ROS.h"
                "${CMAKE_CURRENT_SOURCE_DIR}/src/plugin/Services.h"
 )
-add_plugin(ROS "${plugin_SRC}" "${plugin_HDR}")
+add_plugin(ROS AUTOLOAD ${plugin_SRC} ${plugin_HDR})
 set_target_properties(ROS PROPERTIES COMPILE_FLAGS "-DMC_RTC_ROS_PLUGIN_EXPORTS")
 target_link_libraries(ROS PUBLIC mc_rtc_ros mc_tasks_ros)
 install(FILES etc/ROS.yaml DESTINATION "${MC_PLUGINS_RUNTIME_INSTALL_PREFIX}/etc")

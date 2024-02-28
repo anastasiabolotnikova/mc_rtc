@@ -3,9 +3,14 @@
  */
 
 #include <mc_control/mc_global_controller.h>
+
 #include <mc_observers/ObserverLoader.h>
+
 #include <mc_rbdyn/RobotLoader.h>
+
 #include <mc_rtc/ConfigurationHelpers.h>
+#include <mc_rtc/io_utils.h>
+#include <mc_rtc/path.h>
 
 #include <boost/filesystem.hpp>
 namespace bfs = boost::filesystem;
@@ -16,28 +21,27 @@ namespace mc_control
 {
 
 MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string & conf,
-                                                             std::shared_ptr<mc_rbdyn::RobotModule> rm)
+                                                             std::shared_ptr<mc_rbdyn::RobotModule> rm,
+                                                             bool conf_only)
 {
-  // Load default configuration file
-  std::string globalPath(mc_rtc::CONF_PATH);
-  if(bfs::exists(globalPath))
+  if(!conf_only)
   {
-    mc_rtc::log::info("Loading default global configuration {}", globalPath);
-    config.load(globalPath);
-  }
+    // Load default configuration file
+    std::string globalPath(mc_rtc::CONF_PATH);
+    if(bfs::exists(globalPath))
+    {
+      mc_rtc::log::info("Loading default global configuration {}", globalPath);
+      config.load(globalPath);
+    }
 
-#ifndef WIN32
-  auto config_path = bfs::path(std::getenv("HOME")) / ".config/mc_rtc/mc_rtc.conf";
-#else
-  // Should work for Windows Vista and up
-  auto config_path = bfs::path(std::getenv("APPDATA")) / "mc_rtc/mc_rtc.conf";
-#endif
-  // Load user's local configuration if it exists
-  if(!bfs::exists(config_path)) { config_path.replace_extension(".yaml"); }
-  if(bfs::exists(config_path))
-  {
-    mc_rtc::log::info("Loading additional global configuration {}", config_path.string());
-    config.load(config_path.string());
+    bfs::path config_path = mc_rtc::user_config_directory_path("mc_rtc.conf");
+    // Load user's local configuration if it exists
+    if(!bfs::exists(config_path)) { config_path.replace_extension(".yaml"); }
+    if(bfs::exists(config_path))
+    {
+      mc_rtc::log::info("Loading additional global configuration {}", config_path.string());
+      config.load(config_path.string());
+    }
   }
   // Load extra configuration
   if(bfs::exists(conf))
@@ -45,6 +49,7 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
     mc_rtc::log::info("Loading additional global configuration {}", conf);
     config.load(conf);
   }
+  else if(conf_only) { mc_rtc::log::error_and_throw("Required to load {} only but this is not available", conf); }
 
   ///////////////////////
   //  General options  //
@@ -72,56 +77,46 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
   if(rm) { main_robot_module = rm; }
   else
   {
-    if(!config.has("MainRobot") || config("MainRobot").size() == 0)
+    auto main_robot_params = [&]() -> std::vector<std::string>
     {
-      std::string robot_name = config("MainRobot", std::string{"JVRC1"});
-      if(mc_rbdyn::RobotLoader::has_robot(robot_name))
+      auto main_robot_cfg = config.find("MainRobot");
+      if(!main_robot_cfg) { return {"JVRC1"}; }
+      if(main_robot_cfg->isArray()) { return main_robot_cfg->operator std::vector<std::string>(); }
+      if(main_robot_cfg->isObject())
       {
-        try
-        {
-          main_robot_module = mc_rbdyn::RobotLoader::get_robot_module(robot_name);
-        }
-        catch(const mc_rtc::LoaderException & exc)
-        {
-          mc_rtc::log::error_and_throw("Failed to create {} to use as a main robot", robot_name);
-        }
+        auto module_cfg = (*main_robot_cfg)("module");
+        if(module_cfg.isArray()) { return module_cfg.operator std::vector<std::string>(); }
+        return {module_cfg.operator std::string()};
       }
-      else
-      {
-        mc_rtc::log::error_and_throw("Trying to use {} as main robot but this robot cannot be loaded", robot_name);
-      }
+      return {main_robot_cfg->operator std::string()};
+    }();
+    if(!mc_rbdyn::RobotLoader::has_robot(main_robot_params[0]))
+    {
+      mc_rtc::log::error_and_throw("No loadable robot with module {}", main_robot_params[0]);
     }
-    else
+    try
     {
-      std::vector<std::string> params = config("MainRobot");
-      if(mc_rbdyn::RobotLoader::has_robot(params[0]))
-      {
-        try
-        {
-          if(params.size() == 1) { main_robot_module = mc_rbdyn::RobotLoader::get_robot_module(params[0]); }
-          else if(params.size() == 2)
-          {
-            main_robot_module = mc_rbdyn::RobotLoader::get_robot_module(params[0], params[1]);
-          }
-          else if(params.size() == 3)
-          {
-            main_robot_module = mc_rbdyn::RobotLoader::get_robot_module(params[0], params[1], params[2]);
-          }
-          else { throw mc_rtc::LoaderException("Too many parameters given to MainRobot"); }
-        }
-        catch(const mc_rtc::LoaderException &)
-        {
-          mc_rtc::log::error_and_throw("Failed to create main robot using parameters {}", config("MainRobot").dump());
-        }
-      }
-      else
-      {
-        mc_rtc::log::error_and_throw("Trying to use {} as main robot but this robot cannot be loaded", params[0]);
-      }
+      main_robot_module = mc_rbdyn::RobotLoader::get_robot_module(main_robot_params);
+    }
+    catch(const mc_rtc::LoaderException & exc)
+    {
+      mc_rtc::log::error_and_throw(
+          "[mc_rtc::LoaderException] Failed to create [{}] to use as a main robot, exception: {}",
+          mc_rtc::io::to_string(main_robot_params), exc.what());
+    }
+    catch(const std::exception & exc)
+    {
+      mc_rtc::log::error_and_throw("[std::exception] Failed to create [{}] to use as a main robot, exception: {}",
+                                   mc_rtc::io::to_string(main_robot_params), exc.what());
+    }
+    catch(...)
+    {
+      mc_rtc::log::error_and_throw("[General exception] Failed to create [{}] to use as a main robot",
+                                   mc_rtc::io::to_string(main_robot_params));
     }
   }
   main_robot_module->expand_stance();
-  if(main_robot_module->ref_joint_order().size() == 0) { main_robot_module->make_default_ref_joint_order(); }
+  if(main_robot_module->ref_joint_order().empty()) { main_robot_module->make_default_ref_joint_order(); }
 
   /////////////////
   //  Observers  //
@@ -162,10 +157,16 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
         std::ifstream ifs(p.string());
         std::stringstream ss;
         ss << ifs.rdbuf();
-        auto plugin = ss.str();
+        auto plugin = [&ss]()
+        {
+          auto out = ss.str();
+          out.erase(std::find_if(out.rbegin(), out.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(),
+                    out.end());
+          return out;
+        }();
         if(std::find(global_plugins.begin(), global_plugins.end(), plugin) == global_plugins.end())
         {
-          global_plugins.push_back(ss.str());
+          global_plugins.push_back(plugin);
           global_plugins_autoload.push_back(global_plugins.back());
         }
       }
@@ -226,59 +227,10 @@ MCGlobalController::GlobalConfiguration::GlobalConfiguration(const std::string &
   /////////////////////////
   //  GUI server options //
   /////////////////////////
-  if(config.has("GUIServer"))
+  if(auto gui_config = config.find("GUIServer"))
   {
-    auto gui_config = config("GUIServer");
-    enable_gui_server = gui_config("Enable", false);
-    gui_timestep = gui_config("Timestep", 0.05);
-    if(gui_timestep == 0) { gui_timestep = timestep; }
-    if(gui_config.has("IPC"))
-    {
-      auto ipc_config = gui_config("IPC");
-      auto socket = ipc_config("Socket", (bfs::temp_directory_path() / "mc_rtc").string());
-      gui_server_pub_uris.push_back("ipc://" + socket + "_pub.ipc");
-      gui_server_rep_uris.push_back("ipc://" + socket + "_rep.ipc");
-    }
-    auto handle_section = [this, &gui_config](const std::string & section, const std::string & protocol,
-                                              const std::string & default_host,
-                                              const std::pair<unsigned int, unsigned int> & default_ports,
-                                              const std::vector<unsigned int> & used_ports) -> std::vector<unsigned int>
-    {
-      if(gui_config.has(section))
-      {
-        auto prot_config = gui_config(section);
-        auto host = prot_config("Host", default_host);
-        auto ports = prot_config("Ports", default_ports);
-        auto check_port = [&protocol, &used_ports](unsigned int port)
-        {
-          if(std::find(used_ports.begin(), used_ports.end(), port) != used_ports.end())
-          {
-            mc_rtc::log::error(
-                "Port {} configured for protocol {} is alread used by another protocol. Expect things to go badly.",
-                port, protocol);
-          }
-        };
-        check_port(ports.first);
-        check_port(ports.second);
-        {
-          std::stringstream ss;
-          ss << protocol << "://" << host << ":" << ports.first;
-          gui_server_pub_uris.push_back(ss.str());
-        }
-        {
-          std::stringstream ss;
-          ss << protocol << "://" << host << ":" << ports.second;
-          gui_server_rep_uris.push_back(ss.str());
-        }
-        auto ret = used_ports;
-        ret.push_back(ports.first);
-        ret.push_back(ports.second);
-        return ret;
-      }
-      return used_ports;
-    };
-    auto tcp_ports = handle_section("TCP", "tcp", "*", {4242, 4343}, {});
-    handle_section("WS", "ws", "*", {8080, 8081}, tcp_ports);
+    enable_gui_server = (*gui_config)("Enable", false);
+    gui_server_configuration.load(*gui_config);
   }
   else { enable_gui_server = false; }
 }
@@ -345,12 +297,7 @@ void MCGlobalController::GlobalConfiguration::load_controllers_configs()
   controllers_configs.clear();
   // Load controller-specific configuration
   load_configs("controller", enabled_controllers, controller_module_paths,
-#ifndef WIN32
-               bfs::path(std::getenv("HOME")) / ".config/mc_rtc/controllers",
-#else
-               bfs::path(std::getenv("APPDATA")) / "mc_rtc/controllers",
-#endif
-               controllers_configs, config, {"Plugins"});
+               mc_rtc::user_config_directory_path("controllers"), controllers_configs, config, {"Plugins"});
 }
 
 void MCGlobalController::GlobalConfiguration::load_plugin_configs()
@@ -361,11 +308,7 @@ void MCGlobalController::GlobalConfiguration::load_plugin_configs()
 void MCGlobalController::GlobalConfiguration::load_controller_plugin_configs(const std::string & controller,
                                                                              const std::vector<std::string> & plugins)
 {
-#ifndef WIN32
-  bfs::path user_config = bfs::path(std::getenv("HOME")) / ".config" / "mc_rtc";
-#else
-  bfs::path user_config = bfs::path(std::getenv("APPDATA")) / "mc_rtc";
-#endif
+  bfs::path user_config = mc_rtc::user_config_directory_path();
   for(const auto & plugin : plugins)
   {
     auto plugin_c = global_plugin_configs.find(plugin);

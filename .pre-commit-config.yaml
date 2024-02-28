@@ -11,7 +11,7 @@ repos:
   - id: check-useless-excludes
   - id: check-hooks-apply
 - repo: https://github.com/pre-commit/mirrors-clang-format
-  rev: v16.0.6
+  rev: v17.0.6
   hooks:
   - id: clang-format
     'types_or': [c++, c]
@@ -22,7 +22,7 @@ repos:
           utils/mc_bin_flatbuffers/.*
       )$
 - repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v4.4.0
+  rev: v4.5.0
   hooks:
   - id: check-added-large-files
   - id: check-ast
@@ -41,7 +41,8 @@ repos:
           src/mc_control/samples/ExternalForces/etc/ExternalForces.in.yaml|
           src/mc_control/samples/LIPMStabilizer/etc/LIPMStabilizer.in.yaml|
           src/mc_control/fsm/states/data/StabilizerStanding.yaml|
-          tests/controllers/TestPythonState.in.yaml
+          tests/controllers/TestPythonState.in.yaml|
+          tests/global_controller_configuration/mc_rtc.in.yaml
       )$
   - id: debug-statements
   - id: destroyed-symlinks
@@ -51,7 +52,7 @@ repos:
   - id: mixed-line-ending
   - id: trailing-whitespace
 - repo: https://github.com/psf/black
-  rev: 23.7.0
+  rev: 24.2.0
   hooks:
   - id: black
     exclude: |
@@ -60,7 +61,7 @@ repos:
           utils/mc_log_gui/mc_log_ui/ui/.*
       )$
 - repo: https://github.com/PyCQA/flake8
-  rev: 6.1.0
+  rev: 7.0.0
   hooks:
   - id: flake8
     args:

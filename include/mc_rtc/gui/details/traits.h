@@ -14,6 +14,7 @@
 
 #include <array>
 #include <type_traits>
+#include <variant>
 #include <vector>
 
 namespace mc_rtc::gui::details
@@ -105,7 +106,10 @@ inline constexpr bool has_compatible_signature_v = std::is_convertible_v<Callbac
 /** Given a type provides appropriate labels.
  *
  * The following types are supported:
+ * - Eigen::Vector2d -> {"x", "y"}
  * - Eigen::Vector3d -> {"x", "y", "z"}
+ * - Eigen::Vector4d -> {"x", "y", "z", "w"}
+ * - Eigen::Quaterniond -> {"w", "x", "y", "z"}
  * - Eigen::Quaterniond -> {"w", "x", "y", "z"}
  * - sva::MotionVecd -> {"wx", "wy", "wz", "vx", "vy", "vz"}
  * - sva::ForceVecd -> {"cx", "cy", "cz", "fx", "fy", "fz"}
@@ -115,6 +119,14 @@ template<typename T>
 struct Labels
 {
   static constexpr bool has_labels = false;
+  inline static const std::vector<std::string> labels = {};
+};
+
+template<>
+struct Labels<Eigen::Vector2d>
+{
+  static constexpr bool has_labels = true;
+  inline static const std::vector<std::string> labels = {"x", "y"};
 };
 
 template<>
@@ -122,6 +134,13 @@ struct Labels<Eigen::Vector3d>
 {
   static constexpr bool has_labels = true;
   inline static const std::vector<std::string> labels = {"x", "y", "z"};
+};
+
+template<>
+struct Labels<Eigen::Vector4d>
+{
+  static constexpr bool has_labels = true;
+  inline static const std::vector<std::string> labels = {"x", "y", "z", "w"};
 };
 
 template<>
@@ -214,5 +233,19 @@ auto GetValueOrCallbackValue(const T & value_or_cb)
   if constexpr(std::is_invocable_v<T>) { return value_or_cb(); }
   else { return value_or_cb; }
 }
+
+/** Type trait to detect a variant */
+template<typename T>
+struct is_variant : public std::false_type
+{
+};
+
+template<typename... Args>
+struct is_variant<std::variant<Args...>> : public std::true_type
+{
+};
+
+template<typename T>
+inline constexpr bool is_variant_v = is_variant<T>::value;
 
 } // namespace mc_rtc::gui::details

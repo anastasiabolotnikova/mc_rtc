@@ -184,9 +184,9 @@ void Replay::reset(mc_control::MCGlobalController & gc)
     robots_ = mc_rbdyn::Robots::make();
     // Note: we copy the output robots here not the control robots
     gc.robots().copy(*robots_);
-    gc.controller().gui()->removeCategory({"Robots"});
     for(const auto & r : *robots_)
     {
+      gc.controller().gui()->removeElement({"Robots"}, r.name());
       gc.controller().gui()->addElement({"Robots"},
                                         mc_rtc::gui::Robot(r.name(), [&r]() -> const mc_rbdyn::Robot & { return r; }));
     }
@@ -234,6 +234,21 @@ void Replay::reset(mc_control::MCGlobalController & gc)
             iters_ = std::max<size_t>(std::min<size_t>(iter, log_->size() - 1), 0);
           },
           0.0, static_cast<double>(log_->size()) * gc.timestep()));
+  // Use calibration from the replay
+  if(with_inputs_ && log_->meta())
+  {
+    const auto & calibs = log_->meta()->calibs;
+    for(const auto & [r, fs_calibs] : calibs)
+    {
+      if(!gc.robots().hasRobot(r)) { continue; }
+      auto & robot = gc.robots().robot(r);
+      for(const auto & [fs_name, calib] : fs_calibs)
+      {
+        auto & fs = const_cast<mc_rbdyn::ForceSensor &>(robot.forceSensor(fs_name));
+        fs.loadCalibrator(mc_rbdyn::detail::ForceSensorCalibData::fromConfiguration(calib));
+      }
+    }
+  }
   // Run once to fill the initial sensors
   before(gc);
   iters_ = 0;

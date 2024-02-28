@@ -15,9 +15,6 @@
 #include <mc_rtc/log/Logger.h>
 
 #include <array>
-#include <fstream>
-#include <sstream>
-#include <thread>
 
 namespace mc_control
 {
@@ -600,6 +597,42 @@ public:
    * \throws If the specified robot does not exist
    */
   void setJointMotorCurrents(const std::string & robotName, const std::map<std::string, double> & currents);
+
+  /*! \brief Motor status provided by the JointSensor for the main robot (sets control+real)
+   *
+   * \param joint name of the joint to which sensor is attached
+   * \param status motor ON/OFF status
+   * \throws If the robot does not have any JointSensor at joint
+   */
+  void setJointMotorStatus(const std::string & joint, bool status);
+
+  /*! \brief Motor status provided by the JointSensor for the specified robot (sets control+real)
+   *
+   * \param robotName Name of the robot to which the sensor values will be assigned.
+   * A robot with that name must exist in both robots() and realRobots() instances.
+   * \param joint name of the joint to which sensor is attached
+   * \param status motor ON/OFF status
+   * \throws If the robot does not have any JointSensor at joint
+   * \throws If the specified robot does not exist
+   */
+  void setJointMotorStatus(const std::string & robotName, const std::string & joint, bool status);
+
+  /*! \brief Motor status provided by multiple JointSensors for the main robot (sets control+real)
+   *
+   * \param statuses map of joint name to motor status
+   * \throws If any of the joint sensors do not exist
+   */
+  void setJointMotorStatuses(const std::map<std::string, bool> & statuses);
+
+  /*! \brief Motor status provided by multiple JointSensors for the specified robot (sets control+real)
+   *
+   * \param robotName Name of the robot to which the sensor values will be assigned.
+   * A robot with that name must exist in both robots() and realRobots() instances.
+   * \param statuses map of joint name to motor status
+   * \throws If any of the joint sensors do not exist
+   * \throws If the specified robot does not exist
+   */
+  void setJointMotorStatuses(const std::string & robotName, const std::map<std::string, bool> & statuses);
   /** @} */
 
 protected:
@@ -842,7 +875,6 @@ public:
    */
   bool running = false;
 
-public:
   /*! \brief Store the controller configuration */
   struct MC_CONTROL_DLLAPI GlobalConfiguration
   {
@@ -851,29 +883,33 @@ public:
      * \param conf Configuration file that should be loaded
      *
      * \param Main robot module, if null use the MainRobot entry in conf to initialize it
+     *
+     * \param conf_only If true, only load the specified configuration file
      */
-    GlobalConfiguration(const std::string & conf, std::shared_ptr<mc_rbdyn::RobotModule> rm = nullptr);
+    GlobalConfiguration(const std::string & conf,
+                        std::shared_ptr<mc_rbdyn::RobotModule> rm = nullptr,
+                        bool conf_only = false);
 
     inline bool enabled(const std::string & ctrl);
 
     bool verbose_loader = true;
 
     bool init_attitude_from_sensor = false;
-    std::string init_attitude_sensor = "";
+    std::string init_attitude_sensor;
 
-    std::vector<std::string> robot_module_paths = {};
+    std::vector<std::string> robot_module_paths;
     std::shared_ptr<mc_rbdyn::RobotModule> main_robot_module;
 
-    std::vector<std::string> observer_module_paths = {};
+    std::vector<std::string> observer_module_paths;
 
-    std::vector<std::string> global_plugin_paths = {};
-    std::vector<std::string> global_plugins = {};
-    std::vector<std::string> global_plugins_autoload = {};
+    std::vector<std::string> global_plugin_paths;
+    std::vector<std::string> global_plugins;
+    std::vector<std::string> global_plugins_autoload;
     std::unordered_map<std::string, mc_rtc::Configuration> global_plugin_configs;
 
-    std::vector<std::string> controller_module_paths = {};
-    std::vector<std::string> enabled_controllers = {};
-    std::string initial_controller = "";
+    std::vector<std::string> controller_module_paths;
+    std::vector<std::string> enabled_controllers;
+    std::string initial_controller;
     std::unordered_map<std::string, mc_rtc::Configuration> controllers_configs;
     double timestep = 0.002;
     bool include_halfsit_controller = true;
@@ -884,9 +920,7 @@ public:
     std::string log_template = "mc-control";
 
     bool enable_gui_server = true;
-    double gui_timestep = 0.05;
-    std::vector<std::string> gui_server_pub_uris{};
-    std::vector<std::string> gui_server_rep_uris{};
+    ControllerServerConfiguration gui_server_configuration;
 
     Configuration config;
 
@@ -900,8 +934,8 @@ public:
 private:
   using duration_ms = std::chrono::duration<double, std::milli>;
   GlobalConfiguration config;
-  std::string current_ctrl = "";
-  std::string next_ctrl = "";
+  std::string current_ctrl;
+  std::string next_ctrl;
   MCController * controller_ = nullptr;
   MCController * next_controller_ = nullptr;
   std::unique_ptr<mc_rtc::ObjectLoader<MCController>> controller_loader_;
@@ -909,7 +943,7 @@ private:
   std::vector<mc_observers::ObserverPtr> observers_;
   std::map<std::string, mc_observers::ObserverPtr> observersByName_;
 
-  std::unique_ptr<mc_control::ControllerServer> server_ = nullptr;
+  std::unique_ptr<mc_control::ControllerServer> server_;
 
   std::unique_ptr<mc_rtc::ObjectLoader<GlobalPlugin>> plugin_loader_;
   struct PluginHandle
@@ -945,7 +979,7 @@ private:
   void start_log();
   void setup_log();
   void setup_plugin_log();
-  std::map<std::string, bool> setup_logger_ = {};
+  std::map<std::string, bool> setup_logger_;
 
   /** Timers and performance measure */
   duration_ms global_run_dt{0};

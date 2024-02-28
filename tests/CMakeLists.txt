@@ -82,6 +82,7 @@ macro(mc_rtc_test NAME)
 endmacro()
 
 mc_rtc_test(testConfiguration mc_rtc_utils mc_rbdyn)
+mc_rtc_test(testSchema mc_rtc_utils mc_rbdyn)
 mc_rtc_test(testGUIStateBuilder mc_rtc_gui)
 mc_rtc_test(testJsonIO mc_rtc_utils mc_rbdyn)
 mc_rtc_test(testConstraintSetLoader mc_solver)
@@ -226,14 +227,24 @@ mc_rtc_test(test_mc_rbdyn mc_rbdyn)
 # -- Network test -- #
 # ######################################################################################
 
-add_executable(dummyClient dummyClient.cpp)
-set_target_properties(dummyClient PROPERTIES FOLDER tests/GUI)
-target_link_libraries(dummyClient PUBLIC mc_control_client)
+add_executable(gui_SampleClient gui_SampleClient.cpp)
+set_target_properties(gui_SampleClient PROPERTIES FOLDER tests/GUI)
+target_link_libraries(gui_SampleClient PUBLIC mc_control_client)
 
-add_executable(dummyServer dummyServer.cpp)
-target_include_directories(dummyServer PRIVATE ${CONFIG_HEADER_INCLUDE_DIR})
-set_target_properties(dummyServer PROPERTIES FOLDER tests/GUI)
-target_link_libraries(dummyServer PUBLIC mc_control)
+add_executable(gui_SampleServer gui_SampleServer.cpp)
+target_include_directories(gui_SampleServer PRIVATE ${CONFIG_HEADER_INCLUDE_DIR})
+set_target_properties(gui_SampleServer PROPERTIES FOLDER tests/GUI)
+target_link_libraries(gui_SampleServer PUBLIC mc_control)
+
+add_executable(gui_AdvancedForm gui_AdvancedForm.cpp)
+target_include_directories(gui_AdvancedForm PRIVATE ${CONFIG_HEADER_INCLUDE_DIR})
+set_target_properties(gui_AdvancedForm PROPERTIES FOLDER tests/GUI)
+target_link_libraries(gui_AdvancedForm PUBLIC mc_control)
+
+add_executable(gui_Schema gui_Schema.cpp)
+target_include_directories(gui_Schema PRIVATE ${CONFIG_HEADER_INCLUDE_DIR})
+set_target_properties(gui_Schema PROPERTIES FOLDER tests/GUI)
+target_link_libraries(gui_Schema PUBLIC mc_control)
 
 # ######################################################################################
 # -- Filters test -- #
@@ -241,3 +252,5 @@ target_link_libraries(dummyServer PUBLIC mc_control)
 mc_rtc_test(test_filters mc_filter SpaceVecAlg::SpaceVecAlg)
 
 mc_rtc_test(test_interpolation mc_control)
+
+add_subdirectory(global_controller_configuration)

@@ -48,6 +48,8 @@ jobs:
       if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04'
       run: |
         set -e
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo rm -rf /usr/local/lib/android
         echo "LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib/x86_64-linux-gnu/:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
     - name: macOS cleanup
       run: |
@@ -124,7 +126,12 @@ jobs:
           - path: jrl-umi3218/RBDyn
           - path: jrl-umi3218/Tasks
           - path: jrl-umi3218/mc_rbdyn_urdf
-          - path: jrl-umi3218/mc_rtc_data
+          - path: jrl-umi3218/jvrc_description
+            options: -DDISABLE_ROS:BOOL=ON
+          - path: jrl-umi3218/mc_env_description
+            options: -DDISABLE_ROS:BOOL=ON
+          - path: jrl-umi3218/mc_int_obj_description
+            options: -DDISABLE_ROS:BOOL=ON
           - path: jrl-umi3218/eigen-quadprog
           - path: jrl-umi3218/state-observation
           - path: jrl-umi3218/tvm
@@ -176,7 +183,7 @@ jobs:
         popd
     - name: Upload documentation
       # Only run on master branch and for one configuration
-      if: matrix.os == 'ubuntu-18.04' && matrix.build-type == 'RelWithDebInfo' && matrix.compiler == 'gcc' && github.ref == 'refs/heads/master' && github.repository == 'jrl-umi3218/mc_rtc'
+      if: matrix.os == 'ubuntu-20.04' && matrix.build-type == 'RelWithDebInfo' && matrix.compiler == 'gcc' && github.ref == 'refs/heads/master' && github.repository == 'jrl-umi3218/mc_rtc'
       run: |
         set -x
         pushd .

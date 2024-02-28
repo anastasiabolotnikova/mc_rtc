@@ -15,6 +15,7 @@
 #include <mc_rtc/gui/Schema.h>
 #include <mc_rtc/io_utils.h>
 #include <mc_rtc/logging.h>
+#include <mc_rtc/path.h>
 
 #include <mc_tasks/MetaTaskLoader.h>
 
@@ -115,7 +116,7 @@ static inline std::shared_ptr<mc_solver::QPSolver> make_solver(double dt, MCCont
   }
 }
 
-MCController::MCController(const std::vector<std::shared_ptr<mc_rbdyn::RobotModule>> & robots_modules,
+MCController::MCController(const std::vector<std::shared_ptr<mc_rbdyn::RobotModule>> & robot_modules,
                            double dt,
                            const mc_rtc::Configuration & config,
                            ControllerParameters params)
@@ -129,7 +130,14 @@ MCController::MCController(const std::vector<std::shared_ptr<mc_rbdyn::RobotModu
   qpsolver->logger(logger_);
   qpsolver->gui(gui_);
   qpsolver->controller(this);
-  for(auto rm : robots_modules) { loadRobot(rm, rm->name); }
+
+  std::string main_robot_name = config.find<std::string>("MainRobot", "name").value_or(robot_modules[0]->name);
+  loadRobot(robot_modules[0], main_robot_name);
+  for(auto it = std::next(robot_modules.cbegin()); it != robot_modules.end(); ++it)
+  {
+    const auto & rm = *it;
+    loadRobot(rm, rm->name);
+  }
   /* Load robot-specific configuration depending on parameters */
   auto load_robot_config_into = config;
   if(params.load_robot_config_)
@@ -192,7 +200,7 @@ MCController::MCController(const std::vector<std::shared_ptr<mc_rbdyn::RobotModu
   dynamicsConstraint.reset(new mc_solver::DynamicsConstraint(robots(), 0, dt, damper, 0.5));
   kinematicsConstraint.reset(new mc_solver::KinematicsConstraint(robots(), 0, dt, damper, 0.5));
   selfCollisionConstraint.reset(new mc_solver::CollisionsConstraint(robots(), 0, 0, dt));
-  selfCollisionConstraint->addCollisions(solver(), robots_modules[0]->minimalSelfCollisions());
+  selfCollisionConstraint->addCollisions(solver(), robot_modules[0]->minimalSelfCollisions());
   compoundJointConstraint.reset(new mc_solver::CompoundJointConstraint(robots(), 0, timeStep));
   postureTask = std::make_shared<mc_tasks::PostureTask>(solver(), 0, 10.0, 5.0);
   /** Load additional robots from the configuration */
@@ -247,19 +255,15 @@ MCController::MCController(const std::vector<std::shared_ptr<mc_rbdyn::RobotModu
       }
       else
       {
-        std::string module = rconfig("module");
-        auto params = rconfig("params", std::vector<std::string>{});
-        mc_rbdyn::RobotModulePtr rm = nullptr;
-        if(params.size() == 0) { rm = mc_rbdyn::RobotLoader::get_robot_module(module); }
-        else if(params.size() == 1) { rm = mc_rbdyn::RobotLoader::get_robot_module(module, params.at(0)); }
-        else if(params.size() == 2)
+        auto params = [&]() -> std::vector<std::string>
         {
-          rm = mc_rbdyn::RobotLoader::get_robot_module(module, params.at(0), params.at(1));
-        }
-        else
-        {
-          mc_rtc::log::error_and_throw("Controller only handles robot modules that require two parameters at most");
-        }
+          auto module = rconfig("module");
+          if(module.isArray()) { return module.operator std::vector<std::string>(); }
+          std::vector<std::string> params = rconfig("params", std::vector<std::string>{});
+          params.insert(params.begin(), module.operator std::string());
+          return params;
+        }();
+        auto rm = mc_rbdyn::RobotLoader::get_robot_module(params);
         if(!rm) { mc_rtc::log::error_and_throw("Failed to load {} as specified in configuration", rname); }
         auto & robot = loadRobot(rm, rname);
         load_robot_config(robot);
@@ -535,6 +539,8 @@ void MCController::addRobotToLog(const mc_rbdyn::Robot & r)
                          [this, name, jnt]() { return robot(name).jointJointSensor(jnt).driverTemperature(); });
     logger().addLogEntry(entry_str("JointSensor_" + jnt + "_motorCurrent"),
                          [this, name, jnt]() { return robot(name).jointJointSensor(jnt).motorCurrent(); });
+    logger().addLogEntry(entry_str("JointSensor_" + jnt + "_motorStatus"),
+                         [this, name, jnt]() { return robot(name).jointJointSensor(jnt).motorStatus(); });
   }
 }
 
@@ -576,6 +582,7 @@ void MCController::removeRobot(const std::string & name)
       logger().removeLogEntry(entry_str("JointSensor_" + js.joint() + "_motorTemperature"));
       logger().removeLogEntry(entry_str("JointSensor_" + js.joint() + "_driverTemperature"));
       logger().removeLogEntry(entry_str("JointSensor_" + js.joint() + "_motorCurrent"));
+      logger().removeLogEntry(entry_str("JointSensor_" + js.joint() + "_motorStatus"));
     }
     converters_.erase(converters_.begin() + robot.robotIndex());
   }
@@ -734,9 +741,11 @@ void MCController::reset(const ControllerResetData & reset_data)
   updateContacts();
   if(gui_)
   {
+    gui_->removeElement({"Contacts"}, "Contacts");
     gui_->addElement({"Contacts"}, mc_rtc::gui::Table("Contacts", {"R1", "S1", "R2", "S2", "DoF", "Friction"},
                                                       [this]() -> const std::vector<ContactTableDataT> &
                                                       { return contacts_table_; }));
+    gui_->removeElement({"Contacts", "Add"}, "Add contact");
     gui_->addElement({"Contacts", "Add"},
                      mc_rtc::gui::Form(
                          "Add contact",
@@ -757,7 +766,8 @@ void MCController::reset(const ControllerResetData & reset_data)
                          mc_rtc::gui::FormNumberInput("Friction", false, mc_rbdyn::Contact::defaultFriction),
                          mc_rtc::gui::FormArrayInput<Eigen::Vector6d>("dof", false, Eigen::Vector6d::Ones())));
   }
-  logger().addLogEntry("perf_UpdateContacts", [this]() { return updateContacts_dt_.count(); });
+  logger().addLogEntry(
+      "perf_UpdateContacts", [this]() { return updateContacts_dt_.count(); }, true);
 }
 
 void MCController::updateContacts()
@@ -975,11 +985,7 @@ mc_rtc::Configuration MCController::robot_config(const std::string & robot) cons
 {
   mc_rtc::Configuration result;
   bfs::path system_path = bfs::path(loading_location_) / this->name_ / (robot + ".conf");
-#ifndef WIN32
-  bfs::path user_path = bfs::path(std::getenv("HOME")) / ".config/mc_rtc/controllers";
-#else
-  bfs::path user_path = bfs::path(std::getenv("APPDATA")) / "mc_rtc/controllers";
-#endif
+  bfs::path user_path = mc_rtc::user_config_directory_path("controllers");
   user_path = user_path / name_ / (robot + ".conf");
   auto load_conf = [&result](const std::string & path)
   {

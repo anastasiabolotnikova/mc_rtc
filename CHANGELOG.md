@@ -2,6 +2,101 @@
 
 ## [Unreleased]
 
+## [2.11.0] - 2024-02-05
+
+### Added
+
+- [mc_rbdyn/GUI] Add helpers to visualize surfaces and convexes (#431)
+- [mc_rtc/GUI] Added RobotMsg: a complete view of the robot state (#425)
+- [mc_rtc] Add path helpers (#431)
+- [utils/RobotVisualizer] Add a new tool to visualize a robot built on mc_rtc GUI (#431)
+
+### Changes
+
+- [mc_rtc/GUI] Send scale vector for visual mesh instead of scalar (#430)
+
+### Fixes
+
+- [mc_rbdyn] Always use default_attitude to initialize the attitude (#424)
+- [mc_tasks] Clarify usage of targetSurface/targetFrame in ImpedanceTask
+
+## [2.10.0] - 2024-01-17
+
+### Added
+
+- [mc_control] Support for renaming the main robot via the configuration (#423)
+- [mc_rbdyn] Add `addBodySensor` to `mc_rbdyn::Robot` (#419)
+- [mc_rtc] Add support for any fixed size vector to Schema (#422)
+- [mc_rtc] Add `std::map<std::string, T>` support in Schema (#412)
+- [mc_solver] Add support for inactive joints in a collision (#416)
+
+### Fixes
+
+- [StabilizerTask] Fix disabling when the robot is in the air (#411)
+
+## [2.9.3] - 2023-10-16
+
+### Added
+
+- [mc_bin_utils] Add an option to show the initial configuration of the robot
+- [mc_bin_utils] Add an option to show the calibration data used by the robot
+
+### Fixes
+
+- [mc_control] Correctly resume logging on reset
+- [mc_control/FSM] Only start the idle state on the first reset
+- [Replay] Only remove robots published by the controller
+- [StabilizerTask] Use a non-throwing variant of Robot::zmp
+- [utils/mc_log_ui] Stop the animation before saving it
+
+## [2.9.2] - 2023-10-16
+
+### Fixes
+
+- [ROS] Correctly initialize ros2
+- [ROS2] Publish description and parameters as topics rather than parameters
+
+## [2.9.1] - 2023-10-13
+
+### Fixes
+
+- [debian] Package dependency fix in Jammy and later releases
+- [cmake/ROS] Do no let ament intefere with the uninstall target
+
+## [2.9.0] - 2023-10-11
+
+### Added
+
+- [mc_rtc] Added beta version of mc_rtc::Schema (#396)
+- [mc_rtc] Logs now contain the initial configuration of the robot (#398)
+- [mc_rtc] Logs now contain the force sensors' calibration parameters (#398)
+
+### Fixes
+
+- [debian] Fix the ros-@ROS_DISTRO@-mc-rtc-plugin package in ROS2
+- [Replay] Use new information in the logs to improve replay accuracy (#398)
+- [utils/mc_log_ui] Fix comparison loading in Python 3
+
+## [2.8.0] - 2023-09-19
+
+### Added
+
+- [mc_control] Added motor status to joint sensor (#395)
+- [mc_control/FSM] Posture tasks' reset can be disabled (#389)
+- [mc_rtc/Configuration] Added support for `std::variant` (#393)
+- [mc_rtc/Configuration] Added `Configuration::find` (#393)
+- [mc_rtc/GUI] Added form elements to provide more complex forms (#394)
+
+### Changes
+
+- [mc_control/FSM] FSM embedded in a Meta state no longer reset the posture at transition by default (#389)
+
+### Fixes
+
+- [mc_observers] KinematicInertial uses the correct function from state-observation (#391)
+- [mc_solver] Fix a crash in monitor activation
+- [mc_tvm] Correctly include refAccel in Orientation|PositionFunction
+
 ## [2.7.0] - 2023-09-06
 
 ### Added
@@ -741,7 +836,14 @@ mc_rtc website and tutorials are now available in [Japanese](https://jrl-umi3218
 
 Initial release
 
-[Unreleased]: https://github.com/jrl-umi3218/mc_rtc/compare/v2.7.0...HEAD
+[Unreleased]: https://github.com/jrl-umi3218/mc_rtc/compare/v2.11.0...HEAD
+[2.11.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.11.0
+[2.10.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.10.0
+[2.9.3]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.9.3
+[2.9.2]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.9.2
+[2.9.1]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.9.1
+[2.9.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.9.0
+[2.8.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.8.0
 [2.7.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.7.0
 [2.6.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.6.0
 [2.5.0]: https://github.com/jrl-umi3218/mc_rtc/releases/tag/v2.5.0
